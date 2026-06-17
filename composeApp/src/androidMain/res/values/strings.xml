@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">屏幕刷新率</string>
+    <string name="accessibility_desc">监听前台应用切换以自动应用自定义刷新率</string>
+</resources>
