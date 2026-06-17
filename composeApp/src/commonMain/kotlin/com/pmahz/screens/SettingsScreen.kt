@@ -94,7 +94,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         Text(
                             text = "请确保设备已 Root 并授予超级用户权限",
                             style = MiuixTheme.textStyles.footnote2,
-                            color = MiuixTheme.colorScheme.onSurfaceVariant
+                            color = MiuixTheme.colorScheme.onBackgroundVariant
                         )
                     }
                 }
@@ -123,7 +123,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         Text(
                             text = "请先启动 Shizuku 并在 Shizuku 管理器中授权",
                             style = MiuixTheme.textStyles.footnote2,
-                            color = MiuixTheme.colorScheme.onSurfaceVariant
+                            color = MiuixTheme.colorScheme.onBackgroundVariant
                         )
                     }
                 }
