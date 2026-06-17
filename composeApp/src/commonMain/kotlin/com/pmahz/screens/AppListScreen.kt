@@ -18,11 +18,11 @@ import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.TopAppBar
+import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.basic.BasicComponent
-import top.yukonga.miuix.kmp.basic.SearchBar
-import top.yukonga.miuix.kmp.basic.InputField
+import top.yukonga.miuix.kmp.basic.TextField
 import com.pmahz.model.AppInfo
 
 @Composable
@@ -31,7 +31,6 @@ fun AppListScreen(
     onAppClick: (String, String) -> Unit
 ) {
     var searchText by remember { mutableStateOf("") }
-    var expanded by remember { mutableStateOf(false) }
     val allApps = remember { mutableStateListOf<AppInfo>() }
     val filteredApps = remember(allApps, searchText) {
         if (searchText.isEmpty()) allApps
@@ -39,27 +38,15 @@ fun AppListScreen(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        TopAppBar(
-            title = "选择应用",
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(MiuixIcons.Back, contentDescription = "返回")
-                }
-            }
-        )
+        SmallTopAppBar(title = "选择应用")
 
-        SearchBar(
-            inputField = {
-                InputField(
-                    query = searchText,
-                    onQueryChange = { searchText = it },
-                    onSearch = { expanded = false },
-                    expanded = expanded,
-                    onExpandedChange = { expanded = it },
-                    label = "搜索应用"
-                )
-            }
-        )
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+            TextField(
+                value = searchText,
+                onValueChange = { searchText = it },
+                label = "搜索应用"
+            )
+        }
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),

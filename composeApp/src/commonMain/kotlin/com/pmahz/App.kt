@@ -11,12 +11,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import top.yukonga.miuix.kmp.basic.NavigationBar
+import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.NavigationItem
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.icon.extended.VerticalSplit
-import top.yukonga.miuix.kmp.icon.extended.Home
 import com.pmahz.screens.HomeScreen
 import com.pmahz.screens.LocalAppContext
 import com.pmahz.screens.rememberAppContext
@@ -71,18 +72,23 @@ private fun MainScaffold(
     onNavigateToAppConfig: (String, String) -> Unit
 ) {
     val items = listOf(
-        NavigationItem("首页", MiuixIcons.Home),
+        NavigationItem("首页", MiuixIcons.Refresh),
         NavigationItem("应用", MiuixIcons.VerticalSplit),
         NavigationItem("设置", MiuixIcons.Settings)
     )
 
     Scaffold(
         bottomBar = {
-            NavigationBar(
-                items = items,
-                selected = currentTab,
-                onClick = { onTabChange(it) }
-            )
+            NavigationBar {
+                items.forEachIndexed { index, item ->
+                    NavigationBarItem(
+                        selected = currentTab == index,
+                        onClick = { onTabChange(index) },
+                        icon = item.icon,
+                        label = item.label
+                    )
+                }
+            }
         }
     ) { paddingValues ->
         when (currentTab) {
