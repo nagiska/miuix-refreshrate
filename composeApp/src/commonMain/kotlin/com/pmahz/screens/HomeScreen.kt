@@ -10,12 +10,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.pmahz.model.DisplayMode
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
@@ -26,9 +30,10 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 fun HomeScreen(modifier: Modifier = Modifier) {
-    val displayData = refreshDisplayData(refreshTrigger)
     val appContext = LocalAppContext.current
-    var refreshTrigger by remember { mutableStateOf(0) }
+    var refreshTrigger by remember { mutableIntStateOf(0) }
+    val scope = rememberCoroutineScope()
+    val displayData = refreshDisplayData(refreshTrigger)
 
     Column(modifier = modifier) {
         SmallTopAppBar(title = "屏幕刷新率")
@@ -97,8 +102,8 @@ fun HomeScreen(modifier: Modifier = Modifier) {
                                 onClick = {
                                     applyDisplayMode(displayData.authMode, mode, appContext)
                                     refreshTrigger++
-                                    kotlinx.coroutines.GlobalScope.launch {
-                                        kotlinx.coroutines.delay(800)
+                                    scope.launch {
+                                        delay(800)
                                         refreshTrigger++
                                     }
                                 }
