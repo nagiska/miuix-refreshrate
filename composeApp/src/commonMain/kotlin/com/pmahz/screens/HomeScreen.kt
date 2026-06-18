@@ -2,7 +2,6 @@ package com.pmahz.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,6 +16,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.pmahz.model.DisplayMode
+import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.SmallTitle
@@ -114,19 +114,18 @@ private fun RateCardItem(
     isCurrent: Boolean,
     onClick: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Column {
-            Text("${mode.rateInt}Hz · ${mode.rateName}", style = MiuixTheme.textStyles.title4)
-            Spacer(Modifier.height(2.dp))
-            Text(mode.rateDesc, style = MiuixTheme.textStyles.footnote1)
+    BasicComponent(
+        title = "${mode.rateInt}Hz · ${mode.rateName}",
+        summary = mode.rateDesc,
+        onClick = onClick,
+        endActions = {
+            if (isCurrent) {
+                Text(
+                    text = "当前",
+                    style = MiuixTheme.textStyles.body2,
+                    color = MiuixTheme.colorScheme.primary
+                )
+            }
         }
-        if (isCurrent) {
-            Text("当前", style = MiuixTheme.textStyles.body2, color = MiuixTheme.colorScheme.primary)
-        }
-    }
+    )
 }

@@ -19,12 +19,14 @@ import androidx.compose.ui.unit.dp
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
+import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
+import top.yukonga.miuix.kmp.preference.SwitchPreference
 
 @Composable
 fun AppConfigScreen(
@@ -61,27 +63,27 @@ fun AppConfigScreen(
         loaded = true
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        TopAppBar(
-            title = appLabel,
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(MiuixIcons.Back, contentDescription = "返回")
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = appLabel,
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(MiuixIcons.Back, contentDescription = "返回")
+                    }
                 }
-            }
-        )
-
-        if (!loaded) {
-            top.yukonga.miuix.kmp.basic.Text(
-                "加载中...",
-                modifier = Modifier.padding(24.dp)
             )
-            return
+        }
+    ) { paddingValues ->
+        if (!loaded) {
+            Text("加载中...", modifier = Modifier.padding(24.dp))
+            return@Scaffold
         }
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .padding(paddingValues)
                 .verticalScroll(rememberScrollState())
         ) {
             SmallTitle("刷新率配置")
