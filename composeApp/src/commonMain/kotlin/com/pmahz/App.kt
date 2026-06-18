@@ -17,7 +17,6 @@ import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.icon.extended.Settings
-import top.yukonga.miuix.kmp.icon.extended.VerticalSplit
 import com.pmahz.screens.HomeScreen
 import com.pmahz.screens.LocalAppContext
 import com.pmahz.screens.rememberAppContext
@@ -36,23 +35,28 @@ fun App() {
 
         CompositionLocalProvider(LocalAppContext provides appContext) {
             AnimatedContent(targetState = currentScreen) { screen ->
-            when (screen) {
-                Screen.Main -> MainScaffold(
-                    currentTab = currentTab,
-                    onTabChange = { currentTab = it },
-                    onNavigateToAppList = { currentScreen = Screen.AppList },
-                    onNavigateToAppConfig = { pkg, label -> currentScreen = Screen.AppConfig(pkg, label) }
-                )
-                Screen.AppList -> AppListScreen(
-                    onBack = { currentScreen = Screen.Main },
-                    onAppClick = { pkg, label -> currentScreen = Screen.AppConfig(pkg, label) }
-                )
-                is Screen.AppConfig -> AppConfigScreen(
-                    packageName = screen.pkg,
-                    appLabel = screen.label,
-                    onBack = { currentScreen = Screen.Main }
-                )
-            }
+                when (screen) {
+                    Screen.Main -> MainScaffold(
+                        currentTab = currentTab,
+                        onTabChange = { currentTab = it },
+                        onNavigateToCustomApp = { currentScreen = Screen.CustomApp },
+                        onNavigateToAppConfig = { pkg, label -> currentScreen = Screen.AppConfig(pkg, label) }
+                    )
+                    Screen.CustomApp -> CustomAppScreen(
+                        onBack = { currentScreen = Screen.Main },
+                        onNavigateToAppList = { currentScreen = Screen.AppList },
+                        onNavigateToAppConfig = { pkg, label -> currentScreen = Screen.AppConfig(pkg, label) }
+                    )
+                    Screen.AppList -> AppListScreen(
+                        onBack = { currentScreen = Screen.CustomApp },
+                        onAppClick = { pkg, label -> currentScreen = Screen.AppConfig(pkg, label) }
+                    )
+                    is Screen.AppConfig -> AppConfigScreen(
+                        packageName = screen.pkg,
+                        appLabel = screen.label,
+                        onBack = { currentScreen = Screen.CustomApp }
+                    )
+                }
             }
         }
     }
@@ -60,6 +64,7 @@ fun App() {
 
 sealed class Screen {
     data object Main : Screen()
+    data object CustomApp : Screen()
     data object AppList : Screen()
     data class AppConfig(val pkg: String, val label: String) : Screen()
 }
@@ -68,12 +73,11 @@ sealed class Screen {
 private fun MainScaffold(
     currentTab: Int,
     onTabChange: (Int) -> Unit,
-    onNavigateToAppList: () -> Unit,
+    onNavigateToCustomApp: () -> Unit,
     onNavigateToAppConfig: (String, String) -> Unit
 ) {
     val items = listOf(
         NavigationItem("首页", MiuixIcons.Refresh),
-        NavigationItem("应用", MiuixIcons.VerticalSplit),
         NavigationItem("设置", MiuixIcons.Settings)
     )
 
@@ -92,13 +96,11 @@ private fun MainScaffold(
         }
     ) { paddingValues ->
         when (currentTab) {
-            0 -> HomeScreen(modifier = Modifier.fillMaxSize().padding(paddingValues))
-            1 -> CustomAppScreen(
+            0 -> HomeScreen(
                 modifier = Modifier.fillMaxSize().padding(paddingValues),
-                onNavigateToAppList = onNavigateToAppList,
-                onNavigateToAppConfig = onNavigateToAppConfig
+                onNavigateToCustomApp = onNavigateToCustomApp
             )
-            2 -> SettingsScreen(modifier = Modifier.fillMaxSize().padding(paddingValues))
+            1 -> SettingsScreen(modifier = Modifier.fillMaxSize().padding(paddingValues))
         }
     }
 }

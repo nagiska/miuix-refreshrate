@@ -2,6 +2,7 @@ package com.pmahz.screens
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.drawable.Drawable
 import android.provider.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -9,6 +10,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.platform.LocalContext
 import com.pmahz.model.AppInfo
 import com.pmahz.model.DisplayMode
@@ -108,7 +112,9 @@ actual fun loadEnabledApps(): List<EnabledAppData> {
     LaunchedEffect(Unit) {
         try {
             apps = PrefsHelper.getEnabledApps(context).map {
-                EnabledAppData(it.first, it.second, it.third)
+                val parts = it.third.split(" @ ")
+                val hzStr = parts.getOrNull(1)?.replace("Hz", "")?.toIntOrNull() ?: -1
+                EnabledAppData(it.first, it.second, it.third, hzStr, true)
             }
         } catch (e: Exception) {
         }
@@ -158,5 +164,84 @@ actual fun openAccessibilitySettings(context: AppContext) {
         }
         context.context.startActivity(intent)
     } catch (e: Exception) {
+    }
+}
+
+@Composable
+actual fun loadEnabledAppsWithIcons(): List<EnabledAppData> {
+    return loadEnabledApps()
+}
+
+@Composable
+actual fun loadInstalledAppsWithIcons(): List<AppInfoWithIcon> {
+    val context = LocalContext.current
+    var apps by remember { mutableStateOf<List<AppInfoWithIcon>>(emptyList()) }
+
+    LaunchedEffect(Unit) {
+        try {
+            val pm = context.packageManager
+            val installed = pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
+            apps = installed.map { ai ->
+                val icon = try { drawableToPainter(pm.getApplicationIcon(ai)) } catch (e: Exception) { null }
+                AppInfoWithIcon(
+                    name = pm.getApplicationLabel(ai).toString(),
+                    packageName = ai.packageName,
+                    systemApp = ai.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM != 0,
+                    icon = icon
+                )
+            }.filter { it.packageName != context.packageName }
+                .sortedBy { it.name.lowercase() }
+        } catch (e: Exception) {
+        }
+    }
+
+    return apps
+}
+
+@Composable
+actual fun rememberAppIcon(packageName: String): Painter? {
+    val context = LocalContext.current
+    var icon by remember { mutableStateOf<Painter?>(null) }
+
+    LaunchedEffect(packageName) {
+        try {
+            val pm = context.packageManager
+            val drawable = pm.getApplicationIcon(packageName)
+            icon = drawableToPainter(drawable)
+        } catch (e: Exception) {
+        }
+    }
+
+    return icon
+}
+
+@Composable
+actual fun getEnabledAppCount(): Int {
+    val context = LocalContext.current
+    var count by remember { mutableStateOf(0) }
+
+    LaunchedEffect(Unit) {
+        try {
+            count = PrefsHelper.getEnabledApps(context).size
+        } catch (e: Exception) {
+        }
+    }
+
+    return count
+}
+
+private fun drawableToPainter(drawable: Drawable): Painter? {
+    return try {
+        val bitmap = android.graphics.Bitmap.createBitmap(
+            drawable.intrinsicWidth.coerceAtLeast(1),
+            drawable.intrinsicHeight.coerceAtLeast(1),
+            android.graphics.Bitmap.Config.ARGB_8888
+        )
+        val canvas = android.graphics.Canvas(bitmap)
+        drawable.setBounds(0, 0, canvas.width, canvas.height)
+        drawable.draw(canvas)
+        BitmapPainter(bitmap.asImageBitmap())
+    } catch (e: Exception) {
+        null
     }
 }

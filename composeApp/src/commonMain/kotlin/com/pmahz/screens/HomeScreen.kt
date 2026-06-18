@@ -1,22 +1,29 @@
 package com.pmahz.screens
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.pmahz.model.DisplayMode
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -29,11 +36,15 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
-fun HomeScreen(modifier: Modifier = Modifier) {
+fun HomeScreen(
+    modifier: Modifier = Modifier,
+    onNavigateToCustomApp: () -> Unit = {}
+) {
     val appContext = LocalAppContext.current
     var refreshTrigger by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
     val displayData = refreshDisplayData(refreshTrigger)
+    val enabledAppCount = getEnabledAppCount()
 
     Column(modifier = modifier) {
         SmallTopAppBar(title = "屏幕刷新率")
@@ -42,7 +53,7 @@ fun HomeScreen(modifier: Modifier = Modifier) {
             Column(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.Center,
-                horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text("加载中...")
             }
@@ -51,46 +62,35 @@ fun HomeScreen(modifier: Modifier = Modifier) {
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp)
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                start = 12.dp, end = 12.dp, top = 12.dp, bottom = 16.dp
+            )
         ) {
             item {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp)
-                        .padding(top = 12.dp, bottom = 12.dp)
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-                        Text("当前刷新率", style = MiuixTheme.textStyles.body2)
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = displayData.currentMode?.let {
-                                "${it.resolutionLabel} @ ${it.rateInt}Hz"
-                            } ?: "未知",
-                            style = MiuixTheme.textStyles.title2
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(displayData.currentMode?.rateName ?: "", style = MiuixTheme.textStyles.body2)
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = when (displayData.authMode) {
-                                "root" -> "授权: Root"
-                                "shizuku" -> "授权: Shizuku"
-                                else -> "未授权，请在设置中配置"
-                            },
-                            style = MiuixTheme.textStyles.footnote1
-                        )
-                    }
-                }
+                StatusCard(
+                    currentHz = displayData.currentMode?.rateInt ?: -1,
+                    resolution = displayData.currentMode?.resolutionLabel ?: "未知",
+                    rateName = displayData.currentMode?.rateName ?: "",
+                    authMode = displayData.authMode
+                )
+            }
+
+            item {
+                Spacer(Modifier.height(12.dp))
+                CustomAppCountCard(
+                    count = enabledAppCount,
+                    onClick = onNavigateToCustomApp
+                )
             }
 
             displayData.modeGroups.forEach { (resolution, modes) ->
-                item { SmallTitle(text = resolution) }
+                item {
+                    SmallTitle(text = resolution)
+                }
                 item {
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp)
                             .padding(bottom = 12.dp)
                     ) {
                         modes.forEachIndexed { index, mode ->
@@ -113,6 +113,92 @@ fun HomeScreen(modifier: Modifier = Modifier) {
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun StatusCard(
+    currentHz: Int,
+    resolution: String,
+    rateName: String,
+    authMode: String
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        cornerRadius = 20.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = if (currentHz > 0) "${currentHz}Hz" else "未知",
+                    style = MiuixTheme.textStyles.title1
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = rateName,
+                    style = MiuixTheme.textStyles.body2,
+                    color = MiuixTheme.colorScheme.primary
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = resolution,
+                style = MiuixTheme.textStyles.body2,
+                color = MiuixTheme.colorScheme.onBackgroundVariant
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = when (authMode) {
+                    "root" -> "授权方式: Root"
+                    "shizuku" -> "授权方式: Shizuku"
+                    else -> "未授权，请在设置中配置"
+                },
+                style = MiuixTheme.textStyles.footnote1,
+                color = if (authMode.isNotEmpty()) MiuixTheme.colorScheme.primary
+                        else MiuixTheme.colorScheme.onBackgroundVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun CustomAppCountCard(
+    count: Int,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        cornerRadius = 20.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = if (count > 0) "$count" else "0",
+                    style = MiuixTheme.textStyles.title1
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "自定义刷新率应用",
+                    style = MiuixTheme.textStyles.body2
+                )
+            }
+            Text(
+                text = "→",
+                style = MiuixTheme.textStyles.title2,
+                color = MiuixTheme.colorScheme.onBackgroundVariant
+            )
         }
     }
 }
