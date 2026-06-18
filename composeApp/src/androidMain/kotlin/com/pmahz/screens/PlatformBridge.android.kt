@@ -26,11 +26,11 @@ actual fun rememberAppContext(): AppContext {
 }
 
 @Composable
-actual fun refreshDisplayData(): DisplayData? {
+actual fun refreshDisplayData(refreshKey: Int): DisplayData? {
     val context = LocalContext.current
     var data by remember { mutableStateOf<DisplayData?>(null) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(refreshKey) {
         try {
             val authMode = PrefsHelper.getAuthMode(context)
             val current = AutoOverclockManager.getCurrentMode(context)
@@ -46,13 +46,21 @@ actual fun refreshDisplayData(): DisplayData? {
 }
 
 actual fun applyDisplayMode(authMode: String, mode: DisplayMode, context: AppContext) {
-    try {
-        when (authMode) {
-            "root" -> RootUtils.setDisplayMode(mode.width, mode.height, mode.rateInt, mode.sfIndex)
-            "shizuku" -> ShizukuUtils.setDisplayMode(mode.width, mode.height, mode.rateInt, mode.sfIndex)
+    Thread {
+        try {
+            when (authMode) {
+                "root" -> {
+                    RootUtils.setDisplayMode(mode.width, mode.height, mode.rateInt, mode.sfIndex)
+                    RootUtils.setRefreshRateSettings(mode.rateInt)
+                }
+                "shizuku" -> {
+                    ShizukuUtils.setDisplayMode(mode.width, mode.height, mode.rateInt, mode.sfIndex)
+                    ShizukuUtils.setRefreshRateSettings(mode.rateInt)
+                }
+            }
+        } catch (e: Exception) {
         }
-    } catch (e: Exception) {
-    }
+    }.start()
 }
 
 @Composable

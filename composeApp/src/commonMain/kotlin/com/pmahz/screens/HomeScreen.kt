@@ -26,7 +26,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 fun HomeScreen(modifier: Modifier = Modifier) {
-    val displayData = refreshDisplayData()
+    val displayData = refreshDisplayData(refreshTrigger)
     val appContext = LocalAppContext.current
     var refreshTrigger by remember { mutableStateOf(0) }
 
@@ -97,6 +97,10 @@ fun HomeScreen(modifier: Modifier = Modifier) {
                                 onClick = {
                                     applyDisplayMode(displayData.authMode, mode, appContext)
                                     refreshTrigger++
+                                    kotlinx.coroutines.GlobalScope.launch {
+                                        kotlinx.coroutines.delay(800)
+                                        refreshTrigger++
+                                    }
                                 }
                             )
                             if (index < modes.size - 1) HorizontalDivider()

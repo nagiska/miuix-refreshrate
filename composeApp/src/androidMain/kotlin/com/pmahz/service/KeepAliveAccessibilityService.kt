@@ -178,8 +178,14 @@ class KeepAliveAccessibilityService : AccessibilityService() {
             if (target == null) return
 
             when (authMode) {
-                "root" -> RootUtils.setDisplayMode(target.width, target.height, target.rateInt, target.sfIndex)
-                "shizuku" -> ShizukuUtils.setDisplayMode(target.width, target.height, target.rateInt, target.sfIndex)
+                "root" -> {
+                    RootUtils.setDisplayMode(target.width, target.height, target.rateInt, target.sfIndex)
+                    RootUtils.setRefreshRateSettings(target.rateInt)
+                }
+                "shizuku" -> {
+                    ShizukuUtils.setDisplayMode(target.width, target.height, target.rateInt, target.sfIndex)
+                    ShizukuUtils.setRefreshRateSettings(target.rateInt)
+                }
             }
             Log.d(TAG, "应用刷新率已切换: $res @ ${hz}Hz")
         } catch (e: Exception) {

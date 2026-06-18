@@ -16,7 +16,7 @@ val LocalAppContext: ProvidableCompositionLocal<AppContext> = compositionLocalOf
 expect fun rememberAppContext(): AppContext
 
 @Composable
-expect fun refreshDisplayData(): DisplayData?
+expect fun refreshDisplayData(refreshKey: Int = 0): DisplayData?
 
 expect fun applyDisplayMode(authMode: String, mode: DisplayMode, context: AppContext)
 

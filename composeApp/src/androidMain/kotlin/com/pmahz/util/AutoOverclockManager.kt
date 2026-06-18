@@ -27,7 +27,7 @@ object AutoOverclockManager {
                         m.refreshRate,
                         m.modeId
                     )
-                    dm2.sfIndex = i
+                    dm2.sfIndex = m.modeId
                     modes.add(dm2)
                 }
             }

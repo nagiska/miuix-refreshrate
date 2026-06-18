@@ -50,8 +50,14 @@ class OverclockService : Service() {
             }
             if (target != null) {
                 when (authMode) {
-                    "root" -> RootUtils.setDisplayMode(target.width, target.height, target.rateInt, target.sfIndex)
-                    "shizuku" -> ShizukuUtils.setDisplayMode(target.width, target.height, target.rateInt, target.sfIndex)
+                    "root" -> {
+                        RootUtils.setDisplayMode(target.width, target.height, target.rateInt, target.sfIndex)
+                        RootUtils.setRefreshRateSettings(target.rateInt)
+                    }
+                    "shizuku" -> {
+                        ShizukuUtils.setDisplayMode(target.width, target.height, target.rateInt, target.sfIndex)
+                        ShizukuUtils.setRefreshRateSettings(target.rateInt)
+                    }
                 }
                 Log.d(TAG, "超频已应用: ${w}x${h} @ ${hz}Hz")
             }
