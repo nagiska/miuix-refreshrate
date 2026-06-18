@@ -89,3 +89,8 @@ expect fun openAccessibilitySettings(context: AppContext)
 
 @Composable
 expect fun getEnabledAppCount(): Int
+
+@Composable
+expect fun isAccessibilityServiceEnabled(): Boolean
+
+expect fun testRefreshRateSwitch(authMode: String): Boolean

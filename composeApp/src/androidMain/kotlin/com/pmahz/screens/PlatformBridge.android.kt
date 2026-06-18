@@ -245,3 +245,43 @@ private fun drawableToPainter(drawable: Drawable): Painter? {
         null
     }
 }
+
+@Composable
+actual fun isAccessibilityServiceEnabled(): Boolean {
+    val context = LocalContext.current
+    var enabled by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        try {
+            enabled = com.pmahz.util.AccessibilityUtils.isKeepAliveServiceEnabled(context)
+        } catch (e: Exception) {
+        }
+    }
+
+    return enabled
+}
+
+actual fun testRefreshRateSwitch(authMode: String): Boolean {
+    return try {
+        val modes = com.pmahz.util.AutoOverclockManager.getSupportedModes(
+            com.pmahz.MainActivity.instance
+        )
+        if (modes.isEmpty()) {
+            android.util.Log.w("TestSwitch", "No modes available")
+            return false
+        }
+        val mode = modes.first()
+        android.util.Log.d("TestSwitch", "Testing: ${mode.width}x${mode.height} @ ${mode.rateInt}Hz, sfIndex=${mode.sfIndex}")
+        when (authMode) {
+            "root" -> com.pmahz.util.RootUtils.setRate(mode.sfIndex, mode.rateInt)
+            "shizuku" -> com.pmahz.util.ShizukuUtils.setRate(mode.sfIndex, mode.rateInt)
+            else -> {
+                android.util.Log.w("TestSwitch", "Invalid authMode: $authMode")
+                false
+            }
+        }
+    } catch (e: Exception) {
+        android.util.Log.e("TestSwitch", "Test failed: ${e.message}")
+        false
+    }
+}

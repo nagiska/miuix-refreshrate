@@ -130,25 +130,40 @@ class KeepAliveAccessibilityService : AccessibilityService() {
     private fun applyForPackage(basePkg: String) {
         if (basePkg.isEmpty() || basePkg == "android" || basePkg == packageName) return
         val prefs = getSharedPreferences("s", Context.MODE_PRIVATE) ?: return
-        if (!prefs.getBoolean("custom_app_refresh", false)) return
+        if (!prefs.getBoolean("custom_app_refresh", false)) {
+            Log.d(TAG, "custom_app_refresh 未启用，跳过")
+            return
+        }
 
         val authMode = prefs.getString("auth_mode", "") ?: ""
-        if (authMode.isEmpty()) return
+        if (authMode.isEmpty()) {
+            Log.w(TAG, "auth_mode 为空，请在设置中选择授权方式")
+            return
+        }
 
         val effectivePkg = resolveEffectivePkg(prefs, basePkg)
         val enabled = prefs.getBoolean("app_refresh_enabled_$effectivePkg", false)
-        if (!enabled) return
+        if (!enabled) {
+            Log.d(TAG, "应用 $effectivePkg 未配置自定义刷新率")
+            return
+        }
 
         val res = prefs.getString("app_refresh_res_$effectivePkg", "") ?: ""
         val hz = prefs.getInt("app_refresh_hz_$effectivePkg", -1)
-        if (res.isEmpty() || hz <= 0) return
+        if (res.isEmpty() || hz <= 0) {
+            Log.w(TAG, "应用 $effectivePkg 配置不完整: res=$res, hz=$hz")
+            return
+        }
 
         val configKey = "$effectivePkg@$res@$hz"
-        if (configKey == lastAppliedConfig) return
+        if (configKey == lastAppliedConfig) {
+            Log.d(TAG, "配置未变，跳过: $configKey")
+            return
+        }
 
         currentFgPackage = basePkg
         lastAppliedConfig = configKey
-        Log.d(TAG, "自定义刷新率切换: $effectivePkg → $res @ ${hz}Hz")
+        Log.i(TAG, "自定义刷新率切换: $effectivePkg → $res @ ${hz}Hz (auth=$authMode)")
         applyDisplayTarget(authMode, res, hz)
     }
 
