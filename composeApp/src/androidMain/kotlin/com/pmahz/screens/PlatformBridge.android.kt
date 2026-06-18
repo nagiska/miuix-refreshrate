@@ -48,15 +48,10 @@ actual fun refreshDisplayData(refreshKey: Int): DisplayData? {
 actual fun applyDisplayMode(authMode: String, mode: DisplayMode, context: AppContext) {
     Thread {
         try {
+            val dumpsysModeId = mode.sfIndex
             when (authMode) {
-                "root" -> {
-                    RootUtils.setDisplayMode(mode.width, mode.height, mode.rateInt, mode.sfIndex)
-                    RootUtils.setRefreshRateSettings(mode.rateInt)
-                }
-                "shizuku" -> {
-                    ShizukuUtils.setDisplayMode(mode.width, mode.height, mode.rateInt, mode.sfIndex)
-                    ShizukuUtils.setRefreshRateSettings(mode.rateInt)
-                }
+                "root" -> RootUtils.setRate(dumpsysModeId, mode.rateInt)
+                "shizuku" -> ShizukuUtils.setRate(dumpsysModeId, mode.rateInt)
             }
         } catch (e: Exception) {
         }

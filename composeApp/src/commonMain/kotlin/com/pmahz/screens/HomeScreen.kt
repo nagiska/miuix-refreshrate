@@ -103,7 +103,7 @@ fun HomeScreen(modifier: Modifier = Modifier) {
                                     applyDisplayMode(displayData.authMode, mode, appContext)
                                     refreshTrigger++
                                     scope.launch {
-                                        delay(800)
+                                        delay(500)
                                         refreshTrigger++
                                     }
                                 }

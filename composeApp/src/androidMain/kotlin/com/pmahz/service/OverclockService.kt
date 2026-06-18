@@ -49,15 +49,10 @@ class OverclockService : Service() {
                     .minByOrNull { Math.abs(it.rateInt - hz) }
             }
             if (target != null) {
+                val dumpsysModeId = target.sfIndex
                 when (authMode) {
-                    "root" -> {
-                        RootUtils.setDisplayMode(target.width, target.height, target.rateInt, target.sfIndex)
-                        RootUtils.setRefreshRateSettings(target.rateInt)
-                    }
-                    "shizuku" -> {
-                        ShizukuUtils.setDisplayMode(target.width, target.height, target.rateInt, target.sfIndex)
-                        ShizukuUtils.setRefreshRateSettings(target.rateInt)
-                    }
+                    "root" -> RootUtils.setRate(dumpsysModeId, target.rateInt)
+                    "shizuku" -> ShizukuUtils.setRate(dumpsysModeId, target.rateInt)
                 }
                 Log.d(TAG, "超频已应用: ${w}x${h} @ ${hz}Hz")
             }
