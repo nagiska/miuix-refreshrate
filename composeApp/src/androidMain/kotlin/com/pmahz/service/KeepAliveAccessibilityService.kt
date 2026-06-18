@@ -7,24 +7,20 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
-import android.content.pm.PackageManager
-import android.content.res.Configuration
 import android.hardware.display.DisplayManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import android.view.Display
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import androidx.core.app.NotificationCompat
 import com.pmahz.MainActivity
-import com.pmahz.R
 import com.pmahz.model.DisplayMode
 import com.pmahz.util.AutoOverclockManager
 import com.pmahz.util.RootUtils
 import com.pmahz.util.ShizukuUtils
-import java.util.Locale
 
 class KeepAliveAccessibilityService : AccessibilityService() {
     companion object {
@@ -38,6 +34,9 @@ class KeepAliveAccessibilityService : AccessibilityService() {
     private var currentFgPackage: String = ""
     private var pendingFgPackage: String = ""
     private var lastAppliedConfig: String = ""
+    private var lastRealPkg: String = ""
+    private var pendingApplyRunnable: Runnable? = null
+    private var cachedModes: List<DisplayMode> = emptyList()
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -45,16 +44,39 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         Log.d(TAG, "无障碍服务已连接")
         createCustomChannel()
         servicePrefs = getSharedPreferences("s", Context.MODE_PRIVATE)
+
+        servicePrefs?.registerOnSharedPreferenceChangeListener { sp, key ->
+            if ("custom_app_refresh" == key) {
+                if (sp.getBoolean("custom_app_refresh", false)) {
+                    if (lastRealPkg.isEmpty()) {
+                        postWaitingNotification()
+                    } else {
+                        updatePersistentNotification(lastRealPkg)
+                    }
+                } else {
+                    cancelCustomNotification()
+                }
+            }
+        }
+
         if (servicePrefs?.getBoolean("custom_app_refresh", false) == true) {
             postWaitingNotification()
         }
+
+        Thread {
+            try {
+                cachedModes = AutoOverclockManager.getSupportedModes(this)
+                Log.d(TAG, "预扫描模式完成: ${cachedModes.size} 个模式")
+            } catch (e: Exception) {
+                Log.e(TAG, "预扫描模式失败: ${e.message}")
+            }
+        }.start()
+
         checkAndRestartService()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
-        val type = event.eventType
-        if (type != 32 && type != 4194304) return
         val pkg = getTopForegroundPackage(event) ?: return
         if (pkg.isEmpty() || pkg == packageName || pkg == "android") return
         scheduleForegroundApply(pkg)
@@ -65,7 +87,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
             val windows = windows
             if (windows != null) {
                 for (w in windows) {
-                    if (w != null && w.isFocused && w.type == 1) {
+                    if (w != null && w.isFocused && w.type == AccessibilityWindowInfo.TYPE_APPLICATION) {
                         val root = w.root
                         if (root != null) {
                             val p = root.packageName
@@ -83,12 +105,15 @@ class KeepAliveAccessibilityService : AccessibilityService() {
 
     private fun scheduleForegroundApply(pkg: String) {
         pendingFgPackage = pkg
-        Thread {
+        pendingApplyRunnable?.let { fgHandler?.removeCallbacks(it) }
+        val runnable = Runnable {
             if (pkg == pendingFgPackage) {
                 applyForPackage(pkg)
                 updatePersistentNotification(pkg)
             }
-        }.start()
+        }
+        pendingApplyRunnable = runnable
+        fgHandler?.postDelayed(runnable, 200)
     }
 
     override fun onInterrupt() {
@@ -158,7 +183,9 @@ class KeepAliveAccessibilityService : AccessibilityService() {
             if (wh.size != 2) return
             val targetW = wh[0].toInt()
             val targetH = wh[1].toInt()
-            val modes = AutoOverclockManager.getSupportedModes(this)
+
+            val modes = cachedModes.ifEmpty { AutoOverclockManager.getSupportedModes(this) }
+
             var target: DisplayMode? = null
             for (m in modes) {
                 if (m.width == targetW && m.height == targetH && m.rateInt == hz) {
@@ -175,14 +202,22 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                     }
                 }
             }
-            if (target == null) return
+
+            if (target == null) {
+                Log.w(TAG, "未找到匹配模式，仅设置 settings 刷新率: $res @ ${hz}Hz")
+                when (authMode) {
+                    "root" -> RootUtils.setRate(null, hz)
+                    "shizuku" -> ShizukuUtils.setRate(null, hz)
+                }
+                return
+            }
 
             val dumpsysModeId = target.sfIndex
             when (authMode) {
                 "root" -> RootUtils.setRate(dumpsysModeId, target.rateInt)
                 "shizuku" -> ShizukuUtils.setRate(dumpsysModeId, target.rateInt)
             }
-            Log.d(TAG, "应用刷新率已切换: $res @ ${hz}Hz")
+            Log.d(TAG, "应用刷新率已切换: $res @ ${hz}Hz (modeId=$dumpsysModeId)")
         } catch (e: Exception) {
             Log.e(TAG, "应用刷新率切换失败: ${e.message}")
         }
@@ -198,6 +233,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
             if (basePkg.isEmpty() || basePkg == "android" || basePkg == packageName) return
             if (basePkg == "com.android.systemui") return
 
+            lastRealPkg = basePkg
             val effectivePkg = resolveEffectivePkg(prefs, basePkg)
             val enabled = prefs.getBoolean("app_refresh_enabled_$effectivePkg", false)
             val setRes = prefs.getString("app_refresh_res_$effectivePkg", "") ?: ""
