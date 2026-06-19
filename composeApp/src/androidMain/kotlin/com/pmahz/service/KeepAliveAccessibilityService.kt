@@ -131,23 +131,24 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         if (basePkg.isEmpty() || basePkg == "android" || basePkg == packageName) return
         val prefs = getSharedPreferences("s", Context.MODE_PRIVATE) ?: return
         if (!prefs.getBoolean("custom_app_refresh", false)) {
-            Log.d(TAG, "custom_app_refresh 未启用，跳过")
             return
         }
 
         val authMode = prefs.getString("auth_mode", "") ?: ""
         if (authMode.isEmpty()) {
-            Log.w(TAG, "auth_mode 为空，请在设置中选择授权方式")
             return
         }
 
         val effectivePkg = resolveEffectivePkg(prefs, basePkg)
         val enabled = prefs.getBoolean("app_refresh_enabled_$effectivePkg", false)
+
         if (!enabled) {
-            Log.d(TAG, "应用 $effectivePkg 未配置自定义刷新率")
-            if (lastAppliedConfig.isNotEmpty()) {
-                Log.i(TAG, "离开已配置应用，逐级下降到 120Hz")
-                val capturedConfig = lastAppliedConfig
+            // Not a configured app - check if we need to restore to 120Hz
+            val savedConfig = prefs.getString("last_applied_config", "") ?: ""
+            if (savedConfig.isNotEmpty()) {
+                Log.i(TAG, "离开已配置应用 $effectivePkg，逐级下降到 120Hz")
+                prefs.edit().remove("last_applied_config").apply()
+                lastAppliedConfig = ""
                 Thread {
                     try {
                         val currentHz = AutoOverclockManager.getCurrentRefreshRate(this)
@@ -159,13 +160,15 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                                 "shizuku" -> ShizukuUtils.setRate(null, 120)
                             }
                         } else {
+                            Log.i(TAG, "开始下降: currentHz=$currentHz → 120Hz")
                             when (authMode) {
-                                "root" -> RootUtils.steppedDecrease(allModes, currentHz, 120) { lastAppliedConfig != capturedConfig }
-                                "shizuku" -> ShizukuUtils.steppedDecrease(allModes, currentHz, 120) { lastAppliedConfig != capturedConfig }
+                                "root" -> RootUtils.steppedDecrease(allModes, currentHz, 120) {
+                                    prefs.getString("last_applied_config", "")?.isNotEmpty() == true
+                                }
+                                "shizuku" -> ShizukuUtils.steppedDecrease(allModes, currentHz, 120) {
+                                    prefs.getString("last_applied_config", "")?.isNotEmpty() == true
+                                }
                             }
-                        }
-                        if (lastAppliedConfig == capturedConfig) {
-                            lastAppliedConfig = ""
                         }
                         Log.i(TAG, "已下降到 120Hz")
                     } catch (e: Exception) {
@@ -185,12 +188,13 @@ class KeepAliveAccessibilityService : AccessibilityService() {
 
         val configKey = "$effectivePkg@$res@$hz"
         if (configKey == lastAppliedConfig) {
-            Log.d(TAG, "配置未变，跳过: $configKey")
             return
         }
 
         currentFgPackage = basePkg
         lastAppliedConfig = configKey
+        // Persist to SharedPreferences so it survives service restart
+        prefs.edit().putString("last_applied_config", configKey).apply()
         Log.i(TAG, "自定义刷新率切换: $effectivePkg → $res @ ${hz}Hz (auth=$authMode)")
         applyDisplayTarget(authMode, res, hz)
     }
