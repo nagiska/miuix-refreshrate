@@ -1,11 +1,16 @@
 package com.pmahz
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -17,6 +22,7 @@ import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.icon.extended.Settings
+import top.yukonga.miuix.kmp.icon.extended.VerticalSplit
 import com.pmahz.screens.HomeScreen
 import com.pmahz.screens.LocalAppContext
 import com.pmahz.screens.rememberAppContext
@@ -26,35 +32,56 @@ import com.pmahz.screens.AppListScreen
 import com.pmahz.screens.AppConfigScreen
 import com.pmahz.theme.RefreshRateTheme
 
+sealed class SubScreen {
+    data object AppList : SubScreen()
+    data class AppConfig(val pkg: String, val label: String) : SubScreen()
+}
+
 @Composable
 fun App() {
     RefreshRateTheme {
         val appContext = rememberAppContext()
         var currentTab by remember { mutableStateOf(0) }
-        var currentScreen by remember { mutableStateOf<Screen>(Screen.Main) }
+        val navigationStack = remember { mutableStateListOf<SubScreen>() }
 
         CompositionLocalProvider(LocalAppContext provides appContext) {
-            AnimatedContent(targetState = currentScreen) { screen ->
-                when (screen) {
-                    Screen.Main -> MainScaffold(
+            val currentSubScreen = navigationStack.lastOrNull()
+
+            BackHandler(enabled = navigationStack.isNotEmpty() || currentTab != 0) {
+                when {
+                    navigationStack.isNotEmpty() -> navigationStack.removeAt(navigationStack.lastIndex)
+                    currentTab != 0 -> currentTab = 0
+                }
+            }
+
+            AnimatedContent(
+                targetState = currentSubScreen,
+                transitionSpec = {
+                    if (targetState != null) {
+                        slideInHorizontally { it } togetherWith slideOutHorizontally { -it / 3 }
+                    } else {
+                        slideInHorizontally { -it / 3 } togetherWith slideOutHorizontally { it }
+                    }
+                }
+            ) { subScreen ->
+                when (subScreen) {
+                    null -> MainScaffold(
                         currentTab = currentTab,
                         onTabChange = { currentTab = it },
-                        onNavigateToCustomApp = { currentScreen = Screen.CustomApp },
-                        onNavigateToAppConfig = { pkg, label -> currentScreen = Screen.AppConfig(pkg, label) }
+                        onNavigateToAppList = { navigationStack.add(SubScreen.AppList) },
+                        onNavigateToAppConfig = { pkg, label -> navigationStack.add(SubScreen.AppConfig(pkg, label)) }
                     )
-                    Screen.CustomApp -> CustomAppScreen(
-                        onBack = { currentScreen = Screen.Main },
-                        onNavigateToAppList = { currentScreen = Screen.AppList },
-                        onNavigateToAppConfig = { pkg, label -> currentScreen = Screen.AppConfig(pkg, label) }
+                    is SubScreen.AppList -> AppListScreen(
+                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
+                        onAppClick = { pkg, label ->
+                            navigationStack.removeAt(navigationStack.lastIndex)
+                            navigationStack.add(SubScreen.AppConfig(pkg, label))
+                        }
                     )
-                    Screen.AppList -> AppListScreen(
-                        onBack = { currentScreen = Screen.CustomApp },
-                        onAppClick = { pkg, label -> currentScreen = Screen.AppConfig(pkg, label) }
-                    )
-                    is Screen.AppConfig -> AppConfigScreen(
-                        packageName = screen.pkg,
-                        appLabel = screen.label,
-                        onBack = { currentScreen = Screen.CustomApp }
+                    is SubScreen.AppConfig -> AppConfigScreen(
+                        packageName = subScreen.pkg,
+                        appLabel = subScreen.label,
+                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
                     )
                 }
             }
@@ -62,22 +89,16 @@ fun App() {
     }
 }
 
-sealed class Screen {
-    data object Main : Screen()
-    data object CustomApp : Screen()
-    data object AppList : Screen()
-    data class AppConfig(val pkg: String, val label: String) : Screen()
-}
-
 @Composable
 private fun MainScaffold(
     currentTab: Int,
     onTabChange: (Int) -> Unit,
-    onNavigateToCustomApp: () -> Unit,
+    onNavigateToAppList: () -> Unit,
     onNavigateToAppConfig: (String, String) -> Unit
 ) {
     val items = listOf(
         NavigationItem("首页", MiuixIcons.Refresh),
+        NavigationItem("应用", MiuixIcons.VerticalSplit),
         NavigationItem("设置", MiuixIcons.Settings)
     )
 
@@ -98,9 +119,14 @@ private fun MainScaffold(
         when (currentTab) {
             0 -> HomeScreen(
                 modifier = Modifier.fillMaxSize().padding(paddingValues),
-                onNavigateToCustomApp = onNavigateToCustomApp
+                onNavigateToTab = { onTabChange(1) }
             )
-            1 -> SettingsScreen(modifier = Modifier.fillMaxSize().padding(paddingValues))
+            1 -> CustomAppScreen(
+                modifier = Modifier.fillMaxSize().padding(paddingValues),
+                onNavigateToAppList = onNavigateToAppList,
+                onNavigateToAppConfig = onNavigateToAppConfig
+            )
+            2 -> SettingsScreen(modifier = Modifier.fillMaxSize().padding(paddingValues))
         }
     }
 }

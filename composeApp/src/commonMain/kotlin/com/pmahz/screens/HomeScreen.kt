@@ -47,7 +47,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 @Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,
-    onNavigateToCustomApp: () -> Unit = {}
+    onNavigateToTab: () -> Unit = {}
 ) {
     val appContext = LocalAppContext.current
     var refreshTrigger by remember { mutableIntStateOf(0) }
@@ -88,7 +88,7 @@ fun HomeScreen(
                 Spacer(Modifier.height(12.dp))
                 CustomAppCountCard(
                     count = enabledAppCount,
-                    onClick = onNavigateToCustomApp
+                    onClick = onNavigateToTab
                 )
             }
 

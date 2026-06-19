@@ -42,7 +42,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 fun CustomAppScreen(
-    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
     onNavigateToAppList: () -> Unit,
     onNavigateToAppConfig: (String, String) -> Unit
 ) {
@@ -58,18 +58,8 @@ fun CustomAppScreen(
         settingsData?.let { masterEnabled = it.customAppRefresh }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = "自定义刷新率应用",
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(MiuixIcons.Back, contentDescription = "返回")
-                    }
-                }
-            )
-        }
-    ) { paddingValues ->
+    Column(modifier = modifier) {
+        SmallTopAppBar(title = "自定义刷新率应用")
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()

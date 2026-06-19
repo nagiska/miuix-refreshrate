@@ -27,6 +27,7 @@ kotlin {
             implementation(libs.miuix.ui)
             implementation(libs.miuix.preference)
             implementation(libs.miuix.icons)
+            implementation(libs.miuix.blur)
         }
 
         androidMain.dependencies {
