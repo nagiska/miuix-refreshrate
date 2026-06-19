@@ -55,8 +55,38 @@ fun HomeScreen(
     val displayData = refreshDisplayData(refreshTrigger)
     val enabledAppCount = getEnabledAppCount()
 
+    val accessibilityEnabled = isAccessibilityServiceEnabled()
+    val authMode = displayData?.authMode ?: ""
+
     Column(modifier = modifier) {
         SmallTopAppBar(title = "屏幕刷新率")
+
+        // Status indicators row
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Auth mode indicator
+            Text(
+                text = when (authMode) {
+                    "root" -> "Root"
+                    "shizuku" -> "Shizuku"
+                    else -> "未授权"
+                },
+                style = MiuixTheme.textStyles.footnote2,
+                color = if (authMode.isNotEmpty()) Color(0xFF34C759) else Color(0xFFFF4D4F)
+            )
+            Spacer(Modifier.width(8.dp))
+            // Accessibility service indicator
+            Text(
+                text = if (accessibilityEnabled) "无障碍✓" else "无障碍✕",
+                style = MiuixTheme.textStyles.footnote2,
+                color = if (accessibilityEnabled) Color(0xFF34C759) else Color(0xFFFF4D4F)
+            )
+        }
 
         if (displayData == null) {
             Column(
