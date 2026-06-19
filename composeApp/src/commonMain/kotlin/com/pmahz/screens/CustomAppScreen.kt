@@ -15,6 +15,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -24,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
@@ -32,26 +38,64 @@ fun CustomAppScreen(
     onNavigateToAppList: () -> Unit,
     onNavigateToAppConfig: (String, String) -> Unit
 ) {
-    val allApps = loadInstalledAppsWithIcons()
+    var showSystemApps by remember { mutableStateOf(false) }
+    var searchText by remember { mutableStateOf("") }
     val enabledApps = loadEnabledApps()
     val enabledPkgs = enabledApps.map { it.pkg }.toSet()
 
+    // Load apps list (without icons for performance)
+    val allApps = loadInstalledApps()
+    val filteredApps = remember(allApps, showSystemApps, searchText) {
+        allApps
+            .filter { if (!showSystemApps) !it.systemApp else true }
+            .filter {
+                searchText.isEmpty() ||
+                    it.name.contains(searchText, ignoreCase = true) ||
+                    it.packageName.contains(searchText, ignoreCase = true)
+            }
+            .sortedWith(
+                compareByDescending<AppInfo> { it.packageName in enabledPkgs }
+                    .thenBy { it.name.lowercase() }
+            )
+    }
+
     Column(modifier = modifier) {
-        SmallTopAppBar(title = "应用")
+        SmallTopAppBar(
+            title = "应用",
+            actions = {
+                // System apps toggle
+                Text(
+                    text = if (showSystemApps) "隐藏系统" else "显示系统",
+                    modifier = Modifier
+                        .clickable { showSystemApps = !showSystemApps }
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    style = MiuixTheme.textStyles.body2,
+                    color = MiuixTheme.colorScheme.primary
+                )
+            }
+        )
+
+        // Search bar
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+            TextField(
+                value = searchText,
+                onValueChange = { searchText = it },
+                label = "搜索应用"
+            )
+        }
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp)
         ) {
-            items(allApps) { app ->
-                val isConfigured = enabledPkgs.contains(app.packageName)
+            items(filteredApps, key = { it.packageName }) { app ->
+                val isConfigured = app.packageName in enabledPkgs
                 val hz = if (isConfigured) enabledApps.firstOrNull { it.pkg == app.packageName }?.hz ?: -1 else -1
 
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp)
-                        .padding(bottom = 12.dp)
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
                 ) {
                     Row(
                         modifier = Modifier
@@ -60,9 +104,11 @@ fun CustomAppScreen(
                             .padding(horizontal = 16.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (app.icon != null) {
+                        // Lazy icon loading
+                        val icon = rememberAppIcon(app.packageName)
+                        if (icon != null) {
                             Image(
-                                painter = app.icon,
+                                painter = icon,
                                 contentDescription = app.name,
                                 modifier = Modifier
                                     .size(40.dp)
