@@ -205,7 +205,7 @@ private fun StatusCard(
                     modifier = Modifier
                         .fillMaxSize()
                         .border(
-                            width = 8.dp,
+                            width = 12.dp,
                             color = accentColor,
                             shape = CircleShape
                         ),
@@ -215,7 +215,7 @@ private fun StatusCard(
                         imageVector = MiuixIcons.Ok,
                         contentDescription = "check",
                         tint = accentColor,
-                        modifier = Modifier.size(80.dp)
+                        modifier = Modifier.size(96.dp)
                     )
                 }
             }
