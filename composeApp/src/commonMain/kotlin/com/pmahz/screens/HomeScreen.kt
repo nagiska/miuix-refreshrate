@@ -3,6 +3,7 @@ package com.pmahz.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -137,17 +138,22 @@ private fun StatusCard(
     rateName: String,
     authMode: String
 ) {
+    val isDark = isSystemInDarkTheme()
+    val cardBg = if (isDark) Color(0xFF1E3D2E) else Color(0xFFE8F5E9)
+    val titleColor = if (isDark) Color.White else Color(0xFF1A1A1A)
+    val subtitleColor = if (isDark) Color(0xFFD0D0D0) else Color(0xFF666666)
+    val accentColor = Color(0xFF34C759)
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .height(200.dp),
         cornerRadius = 20.dp,
         colors = top.yukonga.miuix.kmp.basic.CardDefaults.defaultColors(
-            color = Color(0xFF1E3D2E)
+            color = cardBg
         )
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            // Content (left side)
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -156,7 +162,7 @@ private fun StatusCard(
                 Text(
                     text = "工作中",
                     style = MiuixTheme.textStyles.title2,
-                    color = Color.White
+                    color = titleColor
                 )
 
                 Spacer(Modifier.height(4.dp))
@@ -164,7 +170,7 @@ private fun StatusCard(
                 Text(
                     text = resolution,
                     style = MiuixTheme.textStyles.body2,
-                    color = Color(0xFFD0D0D0)
+                    color = subtitleColor
                 )
 
                 Spacer(Modifier.height(20.dp))
@@ -172,7 +178,7 @@ private fun StatusCard(
                 Text(
                     text = if (currentHz > 0) "${currentHz}Hz" else "未知",
                     style = MiuixTheme.textStyles.title1,
-                    color = Color.White
+                    color = titleColor
                 )
 
                 Spacer(Modifier.height(4.dp))
@@ -184,7 +190,7 @@ private fun StatusCard(
                         else -> "未授权"
                     },
                     style = MiuixTheme.textStyles.footnote1,
-                    color = Color(0xFFC8C8C8)
+                    color = subtitleColor
                 )
             }
 
@@ -199,8 +205,8 @@ private fun StatusCard(
                     modifier = Modifier
                         .fillMaxSize()
                         .border(
-                            width = 4.dp,
-                            color = Color(0xFF34C759),
+                            width = 8.dp,
+                            color = accentColor,
                             shape = CircleShape
                         ),
                     contentAlignment = Alignment.Center
@@ -208,7 +214,7 @@ private fun StatusCard(
                     Icon(
                         imageVector = MiuixIcons.Ok,
                         contentDescription = "check",
-                        tint = Color(0xFF34C759),
+                        tint = accentColor,
                         modifier = Modifier.size(80.dp)
                     )
                 }
