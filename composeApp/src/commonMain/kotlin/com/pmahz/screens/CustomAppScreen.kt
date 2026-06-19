@@ -31,6 +31,7 @@ import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import com.pmahz.model.AppInfo
 
 @Composable
 fun CustomAppScreen(
