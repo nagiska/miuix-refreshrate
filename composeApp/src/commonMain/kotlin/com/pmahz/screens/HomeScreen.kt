@@ -1,6 +1,7 @@
 package com.pmahz.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -197,8 +198,9 @@ private fun StatusCard(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(
-                            color = Color(0xFF34C759).copy(alpha = 0.18f),
+                        .border(
+                            width = 4.dp,
+                            color = Color(0xFF34C759),
                             shape = CircleShape
                         ),
                     contentAlignment = Alignment.Center
@@ -207,7 +209,7 @@ private fun StatusCard(
                         imageVector = MiuixIcons.Ok,
                         contentDescription = "check",
                         tint = Color(0xFF34C759),
-                        modifier = Modifier.size(72.dp)
+                        modifier = Modifier.size(80.dp)
                     )
                 }
             }
