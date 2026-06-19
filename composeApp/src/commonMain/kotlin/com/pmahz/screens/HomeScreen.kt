@@ -211,12 +211,26 @@ private fun StatusCard(
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = MiuixIcons.Ok,
-                        contentDescription = "check",
-                        tint = accentColor,
+                    // Custom thick checkmark with rounded corners
+                    androidx.compose.foundation.Canvas(
                         modifier = Modifier.size(96.dp)
-                    )
+                    ) {
+                        val stroke = androidx.compose.ui.graphics.drawscope.Stroke(
+                            width = size.minDimension * 0.12f,
+                            cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                            join = androidx.compose.ui.graphics.StrokeJoin.Round
+                        )
+                        val path = androidx.compose.ui.graphics.Path().apply {
+                            moveTo(size.width * 0.2f, size.height * 0.5f)
+                            lineTo(size.width * 0.42f, size.height * 0.72f)
+                            lineTo(size.width * 0.8f, size.height * 0.28f)
+                        }
+                        drawPath(
+                            path = path,
+                            color = accentColor,
+                            style = stroke
+                        )
+                    }
                 }
             }
         }
