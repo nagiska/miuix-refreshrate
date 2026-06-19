@@ -100,10 +100,15 @@ fun HomeScreen(
                                     it.width == mode.width && it.height == mode.height && it.rateInt == mode.rateInt
                                 } == true,
                                 onClick = {
-                                    applyDisplayMode(displayData.authMode, mode, appContext)
-                                    refreshTrigger++
                                     scope.launch {
-                                        delay(500)
+                                        val currentHz = displayData.currentMode?.rateInt ?: 0
+                                        val targetHz = mode.rateInt
+                                        applyDisplayMode(displayData.authMode, mode, appContext)
+                                        // Wait for stepping to complete
+                                        val stepDelay = if (targetHz > currentHz) {
+                                            ((targetHz - currentHz) / 12) * 800L + 1000L
+                                        } else 1000L
+                                        delay(stepDelay)
                                         refreshTrigger++
                                     }
                                 }
