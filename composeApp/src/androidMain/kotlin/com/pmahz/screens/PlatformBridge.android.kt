@@ -52,9 +52,12 @@ actual fun refreshDisplayData(refreshKey: Int): DisplayData? {
 actual fun applyDisplayMode(authMode: String, mode: DisplayMode, context: AppContext) {
     Thread {
         try {
+            val ctx = context.context
+            val currentHz = com.pmahz.util.AutoOverclockManager.getCurrentRefreshRate(ctx)
+            val allModes = com.pmahz.util.AutoOverclockManager.getSupportedModes(ctx)
             when (authMode) {
-                "root" -> RootUtils.setDisplayMode(mode.width, mode.height, mode.rateInt, mode.sfIndex)
-                "shizuku" -> ShizukuUtils.setDisplayMode(mode.width, mode.height, mode.rateInt, mode.sfIndex)
+                "root" -> com.pmahz.util.RootUtils.steppedSwitch(mode, allModes, currentHz)
+                "shizuku" -> com.pmahz.util.ShizukuUtils.steppedSwitch(mode, allModes, currentHz)
             }
         } catch (e: Exception) {
         }

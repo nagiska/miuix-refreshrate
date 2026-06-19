@@ -65,7 +65,7 @@ object RootUtils {
             val fps = match.groupValues[4].toFloatOrNull()?.toInt() ?: continue
             if (fps in 30..300) {
                 val dm = DisplayMode(w, h, fps.toFloat(), id)
-                dm.sfIndex = id
+                dm.sfIndex = id - 1
                 modes.add(dm)
             }
         }
@@ -119,5 +119,20 @@ object RootUtils {
     fun setNativeRefreshOverlay(on: Boolean): Boolean {
         val valInt = if (on) 1 else 0
         return execRoot("service call SurfaceFlinger 1034 i32 $valInt")
+    }
+
+    fun steppedSwitch(targetMode: DisplayMode, allModes: List<DisplayMode>, currentHz: Int) {
+        val targetHz = targetMode.rateInt
+        if (currentHz < targetHz) {
+            val steps = allModes
+                .filter { it.rateInt in (currentHz + 1)..targetHz }
+                .sortedBy { it.rateInt }
+            for (step in steps) {
+                setDisplayMode(step.width, step.height, step.rateInt, step.sfIndex)
+                try { Thread.sleep(800) } catch (e: InterruptedException) { break }
+            }
+        } else {
+            setDisplayMode(targetMode.width, targetMode.height, targetMode.rateInt, targetMode.sfIndex)
+        }
     }
 }

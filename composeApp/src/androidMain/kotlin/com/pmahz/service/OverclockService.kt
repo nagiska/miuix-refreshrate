@@ -49,9 +49,11 @@ class OverclockService : Service() {
                     .minByOrNull { Math.abs(it.rateInt - hz) }
             }
             if (target != null) {
+                val currentHz = com.pmahz.util.AutoOverclockManager.getCurrentRefreshRate(this)
+                val allModes = modes
                 when (authMode) {
-                    "root" -> RootUtils.setDisplayMode(target.width, target.height, target.rateInt, target.sfIndex)
-                    "shizuku" -> ShizukuUtils.setDisplayMode(target.width, target.height, target.rateInt, target.sfIndex)
+                    "root" -> RootUtils.steppedSwitch(target, allModes, currentHz)
+                    "shizuku" -> ShizukuUtils.steppedSwitch(target, allModes, currentHz)
                 }
                 Log.d(TAG, "超频已应用: ${w}x${h} @ ${hz}Hz")
             }

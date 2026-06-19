@@ -219,7 +219,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
             }
 
             if (target == null) {
-                Log.w(TAG, "未找到匹配模式，仅设置 settings 刷新率: $res @ ${hz}Hz")
+                Log.w(TAG, "未找到匹配模式，仅设置 settings: $res @ ${hz}Hz")
                 when (authMode) {
                     "root" -> RootUtils.setRate(null, hz)
                     "shizuku" -> ShizukuUtils.setRate(null, hz)
@@ -227,9 +227,11 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                 return
             }
 
+            val currentHz = AutoOverclockManager.getCurrentRefreshRate(this)
+            val allModes = modes
             when (authMode) {
-                "root" -> RootUtils.setDisplayMode(target.width, target.height, target.rateInt, target.sfIndex)
-                "shizuku" -> ShizukuUtils.setDisplayMode(target.width, target.height, target.rateInt, target.sfIndex)
+                "root" -> RootUtils.steppedSwitch(target, allModes, currentHz)
+                "shizuku" -> ShizukuUtils.steppedSwitch(target, allModes, currentHz)
             }
             Log.d(TAG, "应用刷新率已切换: $res @ ${hz}Hz (sfIndex=${target.sfIndex})")
         } catch (e: Exception) {
