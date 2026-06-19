@@ -136,14 +136,15 @@ object RootUtils {
         }
     }
 
-    fun steppedDecrease(allModes: List<DisplayMode>, currentHz: Int, targetHz: Int) {
+    fun steppedDecrease(allModes: List<DisplayMode>, currentHz: Int, targetHz: Int, isCancelled: () -> Boolean = { false }) {
         if (currentHz <= targetHz) return
         val steps = allModes
             .filter { it.rateInt in targetHz until currentHz }
             .sortedByDescending { it.rateInt }
         for (step in steps) {
+            if (isCancelled()) return
             setDisplayMode(step.width, step.height, step.rateInt, step.sfIndex)
-            try { Thread.sleep(800) } catch (e: InterruptedException) { break }
+            try { Thread.sleep(500) } catch (e: InterruptedException) { break }
         }
     }
 }

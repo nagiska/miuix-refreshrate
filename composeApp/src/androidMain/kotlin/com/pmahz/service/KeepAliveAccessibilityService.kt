@@ -145,17 +145,27 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         val enabled = prefs.getBoolean("app_refresh_enabled_$effectivePkg", false)
         if (!enabled) {
             Log.d(TAG, "应用 $effectivePkg 未配置自定义刷新率")
-            // Leave a configured app → step down to 120Hz
             if (lastAppliedConfig.isNotEmpty()) {
                 Log.i(TAG, "离开已配置应用，逐级下降到 120Hz")
-                lastAppliedConfig = ""
+                val capturedConfig = lastAppliedConfig
                 Thread {
                     try {
                         val currentHz = AutoOverclockManager.getCurrentRefreshRate(this)
                         val allModes = AutoOverclockManager.getSupportedModes(this)
-                        when (authMode) {
-                            "root" -> RootUtils.steppedDecrease(allModes, currentHz, 120)
-                            "shizuku" -> ShizukuUtils.steppedDecrease(allModes, currentHz, 120)
+                        if (allModes.isEmpty()) {
+                            Log.w(TAG, "模式列表为空，仅设置 settings")
+                            when (authMode) {
+                                "root" -> RootUtils.setRate(null, 120)
+                                "shizuku" -> ShizukuUtils.setRate(null, 120)
+                            }
+                        } else {
+                            when (authMode) {
+                                "root" -> RootUtils.steppedDecrease(allModes, currentHz, 120) { lastAppliedConfig != capturedConfig }
+                                "shizuku" -> ShizukuUtils.steppedDecrease(allModes, currentHz, 120) { lastAppliedConfig != capturedConfig }
+                            }
+                        }
+                        if (lastAppliedConfig == capturedConfig) {
+                            lastAppliedConfig = ""
                         }
                         Log.i(TAG, "已下降到 120Hz")
                     } catch (e: Exception) {
