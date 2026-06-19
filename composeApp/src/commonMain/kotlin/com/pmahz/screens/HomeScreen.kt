@@ -139,8 +139,11 @@ private fun StatusCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(180.dp),
-        cornerRadius = 20.dp
+            .height(200.dp),
+        cornerRadius = 20.dp,
+        colors = top.yukonga.miuix.kmp.basic.CardDefaults.defaultColors(
+            color = Color(0xFF1E3D2E)
+        )
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             // Content (left side)
@@ -163,7 +166,7 @@ private fun StatusCard(
                     color = Color(0xFFD0D0D0)
                 )
 
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(20.dp))
 
                 Text(
                     text = if (currentHz > 0) "${currentHz}Hz" else "未知",
@@ -184,18 +187,18 @@ private fun StatusCard(
                 )
             }
 
-            // Large checkmark icon (bottom-right, partially overflow)
+            // Large checkmark circle (bottom-right, partially overflow)
             Box(
                 modifier = Modifier
-                    .size(120.dp)
+                    .size(140.dp)
                     .align(Alignment.BottomEnd)
-                    .offset(x = 16.dp, y = 16.dp)
+                    .offset(x = 24.dp, y = 24.dp)
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(
-                            color = Color(0xFF34C759).copy(alpha = 0.15f),
+                            color = Color(0xFF34C759).copy(alpha = 0.18f),
                             shape = CircleShape
                         ),
                     contentAlignment = Alignment.Center
@@ -204,7 +207,7 @@ private fun StatusCard(
                         imageVector = MiuixIcons.Ok,
                         contentDescription = "check",
                         tint = Color(0xFF34C759),
-                        modifier = Modifier.size(60.dp)
+                        modifier = Modifier.size(72.dp)
                     )
                 }
             }
