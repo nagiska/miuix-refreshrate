@@ -33,9 +33,12 @@ import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
+import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Ok
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
@@ -152,10 +155,11 @@ private fun StatusCard(
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "✓",
-                        color = Color.White,
-                        style = MiuixTheme.textStyles.body1
+                    Icon(
+                        imageVector = MiuixIcons.Ok,
+                        contentDescription = "check",
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
                     )
                 }
                 Spacer(Modifier.width(8.dp))
