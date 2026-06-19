@@ -3,7 +3,6 @@ package com.pmahz.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -136,90 +135,76 @@ private fun StatusCard(
         modifier = Modifier.fillMaxWidth(),
         cornerRadius = 20.dp
     ) {
-        Box(modifier = Modifier.fillMaxWidth()) {
-            // Decorative green circle overlay (top-right)
-            Box(
-                modifier = Modifier
-                    .size(120.dp)
-                    .align(Alignment.TopEnd)
-                    .padding(end = (-20).dp, top = (-20).dp)
-                    .background(
-                        color = Color(0xFF34C759).copy(alpha = 0.12f),
-                        shape = CircleShape
-                    )
-            )
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Green checkmark circle
-                    Box(
-                        modifier = Modifier
-                            .size(28.dp)
-                            .background(
-                                color = Color(0xFF34C759),
-                                shape = CircleShape
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "✓",
-                            color = Color.White,
-                            style = MiuixTheme.textStyles.body1
-                        )
-                    }
-                    Spacer(Modifier.width(8.dp))
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Green checkmark circle
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .background(
+                            color = Color(0xFF34C759),
+                            shape = CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
                     Text(
-                        text = "工作中",
-                        style = MiuixTheme.textStyles.title2
+                        text = "✓",
+                        color = Color.White,
+                        style = MiuixTheme.textStyles.body1
                     )
                 }
-
-                Spacer(Modifier.height(12.dp))
-
+                Spacer(Modifier.width(8.dp))
                 Text(
-                    text = if (currentHz > 0) "${currentHz}Hz" else "未知",
-                    style = MiuixTheme.textStyles.title1
-                )
-
-                Spacer(Modifier.height(4.dp))
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = resolution,
-                        style = MiuixTheme.textStyles.body2,
-                        color = MiuixTheme.colorScheme.onBackgroundVariant
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "·",
-                        style = MiuixTheme.textStyles.body2,
-                        color = MiuixTheme.colorScheme.onBackgroundVariant
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = rateName,
-                        style = MiuixTheme.textStyles.body2,
-                        color = Color(0xFF34C759)
-                    )
-                }
-
-                Spacer(Modifier.height(8.dp))
-
-                Text(
-                    text = when (authMode) {
-                        "root" -> "授权方式: Root"
-                        "shizuku" -> "授权方式: Shizuku"
-                        else -> "未授权，请在设置中配置"
-                    },
-                    style = MiuixTheme.textStyles.footnote1,
-                    color = if (authMode.isNotEmpty()) MiuixTheme.colorScheme.primary
-                            else MiuixTheme.colorScheme.onBackgroundVariant
+                    text = "工作中",
+                    style = MiuixTheme.textStyles.title2
                 )
             }
+
+            Spacer(Modifier.height(12.dp))
+
+            Text(
+                text = if (currentHz > 0) "${currentHz}Hz" else "未知",
+                style = MiuixTheme.textStyles.title1
+            )
+
+            Spacer(Modifier.height(4.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = resolution,
+                    style = MiuixTheme.textStyles.body2,
+                    color = MiuixTheme.colorScheme.onBackgroundVariant
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "·",
+                    style = MiuixTheme.textStyles.body2,
+                    color = MiuixTheme.colorScheme.onBackgroundVariant
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = rateName,
+                    style = MiuixTheme.textStyles.body2,
+                    color = Color(0xFF34C759)
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            Text(
+                text = when (authMode) {
+                    "root" -> "授权方式: Root"
+                    "shizuku" -> "授权方式: Shizuku"
+                    else -> "未授权，请在设置中配置"
+                },
+                style = MiuixTheme.textStyles.footnote1,
+                color = if (authMode.isNotEmpty()) MiuixTheme.colorScheme.primary
+                        else MiuixTheme.colorScheme.onBackgroundVariant
+            )
         }
     }
 }
