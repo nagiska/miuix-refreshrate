@@ -227,12 +227,11 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                 return
             }
 
-            val dumpsysModeId = target.sfIndex
             when (authMode) {
-                "root" -> RootUtils.setRate(dumpsysModeId, target.rateInt)
-                "shizuku" -> ShizukuUtils.setRate(dumpsysModeId, target.rateInt)
+                "root" -> RootUtils.setDisplayMode(target.width, target.height, target.rateInt, target.sfIndex)
+                "shizuku" -> ShizukuUtils.setDisplayMode(target.width, target.height, target.rateInt, target.sfIndex)
             }
-            Log.d(TAG, "应用刷新率已切换: $res @ ${hz}Hz (modeId=$dumpsysModeId)")
+            Log.d(TAG, "应用刷新率已切换: $res @ ${hz}Hz (sfIndex=${target.sfIndex})")
         } catch (e: Exception) {
             Log.e(TAG, "应用刷新率切换失败: ${e.message}")
         }

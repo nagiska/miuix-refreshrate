@@ -52,10 +52,9 @@ actual fun refreshDisplayData(refreshKey: Int): DisplayData? {
 actual fun applyDisplayMode(authMode: String, mode: DisplayMode, context: AppContext) {
     Thread {
         try {
-            val dumpsysModeId = mode.sfIndex
             when (authMode) {
-                "root" -> RootUtils.setRate(dumpsysModeId, mode.rateInt)
-                "shizuku" -> ShizukuUtils.setRate(dumpsysModeId, mode.rateInt)
+                "root" -> RootUtils.setDisplayMode(mode.width, mode.height, mode.rateInt, mode.sfIndex)
+                "shizuku" -> ShizukuUtils.setDisplayMode(mode.width, mode.height, mode.rateInt, mode.sfIndex)
             }
         } catch (e: Exception) {
         }
@@ -273,8 +272,8 @@ actual fun testRefreshRateSwitch(authMode: String): Boolean {
         val mode = modes.first()
         android.util.Log.d("TestSwitch", "Testing: ${mode.width}x${mode.height} @ ${mode.rateInt}Hz, sfIndex=${mode.sfIndex}")
         when (authMode) {
-            "root" -> com.pmahz.util.RootUtils.setRate(mode.sfIndex, mode.rateInt)
-            "shizuku" -> com.pmahz.util.ShizukuUtils.setRate(mode.sfIndex, mode.rateInt)
+            "root" -> com.pmahz.util.RootUtils.setDisplayMode(mode.width, mode.height, mode.rateInt, mode.sfIndex)
+            "shizuku" -> com.pmahz.util.ShizukuUtils.setDisplayMode(mode.width, mode.height, mode.rateInt, mode.sfIndex)
             else -> {
                 android.util.Log.w("TestSwitch", "Invalid authMode: $authMode")
                 false
