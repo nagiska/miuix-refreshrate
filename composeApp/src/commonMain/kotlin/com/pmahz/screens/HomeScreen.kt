@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -136,21 +137,65 @@ private fun StatusCard(
     authMode: String
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(180.dp),
         cornerRadius = 20.dp
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // Green checkmark circle
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Content (left side)
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp)
+            ) {
+                Text(
+                    text = "工作中",
+                    style = MiuixTheme.textStyles.title2,
+                    color = Color.White
+                )
+
+                Spacer(Modifier.height(4.dp))
+
+                Text(
+                    text = resolution,
+                    style = MiuixTheme.textStyles.body2,
+                    color = Color(0xFFD0D0D0)
+                )
+
+                Spacer(Modifier.height(16.dp))
+
+                Text(
+                    text = if (currentHz > 0) "${currentHz}Hz" else "未知",
+                    style = MiuixTheme.textStyles.title1,
+                    color = Color.White
+                )
+
+                Spacer(Modifier.height(4.dp))
+
+                Text(
+                    text = when (authMode) {
+                        "root" -> "授权方式: Root"
+                        "shizuku" -> "授权方式: Shizuku"
+                        else -> "未授权"
+                    },
+                    style = MiuixTheme.textStyles.footnote1,
+                    color = Color(0xFFC8C8C8)
+                )
+            }
+
+            // Large checkmark icon (bottom-right, partially overflow)
+            Box(
+                modifier = Modifier
+                    .size(120.dp)
+                    .align(Alignment.BottomEnd)
+                    .offset(x = 16.dp, y = 16.dp)
+            ) {
                 Box(
                     modifier = Modifier
-                        .size(28.dp)
+                        .fillMaxSize()
                         .background(
-                            color = Color(0xFF34C759),
+                            color = Color(0xFF34C759).copy(alpha = 0.15f),
                             shape = CircleShape
                         ),
                     contentAlignment = Alignment.Center
@@ -158,58 +203,11 @@ private fun StatusCard(
                     Icon(
                         imageVector = MiuixIcons.Ok,
                         contentDescription = "check",
-                        tint = Color.White,
-                        modifier = Modifier.size(16.dp)
+                        tint = Color(0xFF34C759),
+                        modifier = Modifier.size(60.dp)
                     )
                 }
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "工作中",
-                    style = MiuixTheme.textStyles.title2
-                )
             }
-
-            Spacer(Modifier.height(12.dp))
-
-            Text(
-                text = if (currentHz > 0) "${currentHz}Hz" else "未知",
-                style = MiuixTheme.textStyles.title1
-            )
-
-            Spacer(Modifier.height(4.dp))
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = resolution,
-                    style = MiuixTheme.textStyles.body2,
-                    color = MiuixTheme.colorScheme.onBackgroundVariant
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "·",
-                    style = MiuixTheme.textStyles.body2,
-                    color = MiuixTheme.colorScheme.onBackgroundVariant
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = rateName,
-                    style = MiuixTheme.textStyles.body2,
-                    color = Color(0xFF34C759)
-                )
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            Text(
-                text = when (authMode) {
-                    "root" -> "授权方式: Root"
-                    "shizuku" -> "授权方式: Shizuku"
-                    else -> "未授权，请在设置中配置"
-                },
-                style = MiuixTheme.textStyles.footnote1,
-                color = if (authMode.isNotEmpty()) MiuixTheme.colorScheme.primary
-                        else MiuixTheme.colorScheme.onBackgroundVariant
-            )
         }
     }
 }
