@@ -142,6 +142,10 @@ actual fun loadInstalledApps(): List<AppInfo> {
 
 actual fun saveAppConfig(context: AppContext, pkg: String, enabled: Boolean, res: String, hz: Int) {
     PrefsHelper.setAppConfig(context.context, pkg, enabled, res, hz)
+    // Auto-enable custom_app_refresh when any app is configured
+    if (enabled) {
+        PrefsHelper.setCustomAppRefresh(context.context, true)
+    }
 }
 
 actual fun loadAppConfig(context: AppContext, pkg: String): Triple<Boolean, String, Int> {

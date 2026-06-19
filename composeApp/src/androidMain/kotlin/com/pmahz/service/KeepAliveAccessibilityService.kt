@@ -130,12 +130,10 @@ class KeepAliveAccessibilityService : AccessibilityService() {
     private fun applyForPackage(basePkg: String) {
         if (basePkg.isEmpty() || basePkg == "android" || basePkg == packageName) return
         val prefs = getSharedPreferences("s", Context.MODE_PRIVATE) ?: return
-        if (!prefs.getBoolean("custom_app_refresh", false)) {
-            return
-        }
 
         val authMode = prefs.getString("auth_mode", "") ?: ""
         if (authMode.isEmpty()) {
+            Log.d(TAG, "auth_mode 为空，跳过")
             return
         }
 
@@ -193,10 +191,9 @@ class KeepAliveAccessibilityService : AccessibilityService() {
 
         currentFgPackage = basePkg
         lastAppliedConfig = configKey
-        // Persist to SharedPreferences so it survives service restart
         prefs.edit().putString("last_applied_config", configKey).apply()
         Log.i(TAG, "自定义刷新率切换: $effectivePkg → $res @ ${hz}Hz (auth=$authMode)")
-        applyDisplayTarget(authMode, res, hz)
+        applyDisplayTarget(authMode, res, hz, configKey)
     }
 
     private fun resolveEffectivePkg(prefs: SharedPreferences, basePkg: String): String {
@@ -224,7 +221,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         return basePkg
     }
 
-    private fun applyDisplayTarget(authMode: String, res: String, hz: Int) {
+    private fun applyDisplayTarget(authMode: String, res: String, hz: Int, configKey: String) {
         try {
             val wh = res.split("x")
             if (wh.size != 2) return
@@ -261,9 +258,10 @@ class KeepAliveAccessibilityService : AccessibilityService() {
 
             val currentHz = AutoOverclockManager.getCurrentRefreshRate(this)
             val allModes = modes
+            Log.i(TAG, "开始切换: currentHz=$currentHz → targetHz=${target.rateInt}, sfIndex=${target.sfIndex}")
             when (authMode) {
-                "root" -> RootUtils.steppedSwitch(target, allModes, currentHz)
-                "shizuku" -> ShizukuUtils.steppedSwitch(target, allModes, currentHz)
+                "root" -> RootUtils.steppedSwitch(target, allModes, currentHz) { lastAppliedConfig != configKey }
+                "shizuku" -> ShizukuUtils.steppedSwitch(target, allModes, currentHz) { lastAppliedConfig != configKey }
             }
             Log.d(TAG, "应用刷新率已切换: $res @ ${hz}Hz (sfIndex=${target.sfIndex})")
         } catch (e: Exception) {
