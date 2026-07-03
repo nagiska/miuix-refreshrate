@@ -125,16 +125,29 @@ object RootUtils {
         val targetHz = targetMode.rateInt
         if (currentHz < targetHz) {
             val steps = allModes
-                .filter { it.rateInt in (currentHz + 1)..targetHz }
+                .filter { it.rateInt > currentHz && it.rateInt <= targetHz }
                 .sortedBy { it.rateInt }
+            Log.d(TAG, "steppedSwitch: currentHz=$currentHz → targetHz=$targetHz, steps=${steps.map { it.rateInt }}")
             for (step in steps) {
-                if (isCancelled()) return
+                if (isCancelled()) {
+                    Log.d(TAG, "steppedSwitch cancelled at ${step.rateInt}Hz")
+                    return
+                }
+                Log.d(TAG, "stepping to ${step.rateInt}Hz (sfIndex=${step.sfIndex})")
                 setDisplayMode(step.width, step.height, step.rateInt, step.sfIndex)
                 try { Thread.sleep(800) } catch (e: InterruptedException) { break }
             }
+            // Ensure final target is set
+            val lastStep = steps.lastOrNull()
+            if (lastStep == null || lastStep.rateInt != targetHz) {
+                Log.d(TAG, "ensuring final target ${targetHz}Hz (sfIndex=${targetMode.sfIndex})")
+                setDisplayMode(targetMode.width, targetMode.height, targetMode.rateInt, targetMode.sfIndex)
+            }
         } else {
+            Log.d(TAG, "direct switch to ${targetHz}Hz (sfIndex=${targetMode.sfIndex})")
             setDisplayMode(targetMode.width, targetMode.height, targetMode.rateInt, targetMode.sfIndex)
         }
+        Log.d(TAG, "steppedSwitch complete: target=${targetHz}Hz")
     }
 
     fun steppedDecrease(allModes: List<DisplayMode>, currentHz: Int, targetHz: Int, isCancelled: () -> Boolean = { false }) {

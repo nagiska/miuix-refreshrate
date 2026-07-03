@@ -143,9 +143,12 @@ fun HomeScreen(
                                         val currentHz = displayData.currentMode?.rateInt ?: 0
                                         val targetHz = mode.rateInt
                                         applyDisplayMode(displayData.authMode, mode, appContext)
-                                        // Wait for stepping to complete
+                                        // Calculate delay based on actual stepping steps
+                                        val stepCount = displayData.modeGroups
+                                            .flatMap { it.second }
+                                            .count { it.rateInt > currentHz && it.rateInt <= targetHz }
                                         val stepDelay = if (targetHz > currentHz) {
-                                            ((targetHz - currentHz) / 12) * 800L + 1000L
+                                            stepCount * 800L + 1000L
                                         } else 1000L
                                         delay(stepDelay)
                                         refreshTrigger++

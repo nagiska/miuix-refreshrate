@@ -36,6 +36,8 @@ actual fun refreshDisplayData(refreshKey: Int): DisplayData? {
 
     LaunchedEffect(refreshKey) {
         try {
+            // Small delay to let display mode settle
+            if (refreshKey > 0) kotlinx.coroutines.delay(300)
             val authMode = PrefsHelper.getAuthMode(context)
             val current = AutoOverclockManager.getCurrentMode(context)
             val modes = AutoOverclockManager.getSupportedModes(context)
@@ -60,6 +62,7 @@ actual fun applyDisplayMode(authMode: String, mode: DisplayMode, context: AppCon
                 "shizuku" -> com.pmahz.util.ShizukuUtils.steppedSwitch(mode, allModes, currentHz)
             }
         } catch (e: Exception) {
+            android.util.Log.e("PlatformBridge", "applyDisplayMode failed: ${e.message}")
         }
     }.start()
 }
