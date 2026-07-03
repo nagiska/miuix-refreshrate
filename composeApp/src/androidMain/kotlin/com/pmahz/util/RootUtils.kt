@@ -133,19 +133,13 @@ object RootUtils {
                     Log.d(TAG, "steppedSwitch cancelled at ${step.rateInt}Hz")
                     return
                 }
-                Log.d(TAG, "stepping to ${step.rateInt}Hz (sfIndex=${step.sfIndex})")
-                setDisplayMode(step.width, step.height, step.rateInt, step.sfIndex)
+                Log.d(TAG, "stepping to ${step.rateInt}Hz (modeId=${step.modeId})")
+                setRate(step.modeId, step.rateInt)
                 try { Thread.sleep(800) } catch (e: InterruptedException) { break }
             }
-            // Ensure final target is set
-            val lastStep = steps.lastOrNull()
-            if (lastStep == null || lastStep.rateInt != targetHz) {
-                Log.d(TAG, "ensuring final target ${targetHz}Hz (sfIndex=${targetMode.sfIndex})")
-                setDisplayMode(targetMode.width, targetMode.height, targetMode.rateInt, targetMode.sfIndex)
-            }
         } else {
-            Log.d(TAG, "direct switch to ${targetHz}Hz (sfIndex=${targetMode.sfIndex})")
-            setDisplayMode(targetMode.width, targetMode.height, targetMode.rateInt, targetMode.sfIndex)
+            Log.d(TAG, "direct switch to ${targetHz}Hz (modeId=${targetMode.modeId})")
+            setRate(targetMode.modeId, targetHz)
         }
         Log.d(TAG, "steppedSwitch complete: target=${targetHz}Hz")
     }
@@ -155,9 +149,11 @@ object RootUtils {
         val steps = allModes
             .filter { it.rateInt in targetHz until currentHz }
             .sortedByDescending { it.rateInt }
+        Log.d(TAG, "steppedDecrease: currentHz=$currentHz → targetHz=$targetHz, steps=${steps.map { it.rateInt }}")
         for (step in steps) {
             if (isCancelled()) return
-            setDisplayMode(step.width, step.height, step.rateInt, step.sfIndex)
+            Log.d(TAG, "stepping down to ${step.rateInt}Hz (modeId=${step.modeId})")
+            setRate(step.modeId, step.rateInt)
             try { Thread.sleep(500) } catch (e: InterruptedException) { break }
         }
     }

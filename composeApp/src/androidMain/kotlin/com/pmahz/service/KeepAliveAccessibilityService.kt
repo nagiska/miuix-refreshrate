@@ -258,12 +258,12 @@ class KeepAliveAccessibilityService : AccessibilityService() {
 
             val currentHz = AutoOverclockManager.getCurrentRefreshRate(this)
             val allModes = modes
-            Log.i(TAG, "开始切换: currentHz=$currentHz → targetHz=${target.rateInt}, sfIndex=${target.sfIndex}")
+            Log.i(TAG, "开始切换: currentHz=$currentHz → targetHz=${target.rateInt}, modeId=${target.modeId}")
             when (authMode) {
                 "root" -> RootUtils.steppedSwitch(target, allModes, currentHz) { lastAppliedConfig != configKey }
                 "shizuku" -> ShizukuUtils.steppedSwitch(target, allModes, currentHz) { lastAppliedConfig != configKey }
             }
-            Log.d(TAG, "应用刷新率已切换: $res @ ${hz}Hz (sfIndex=${target.sfIndex})")
+            Log.d(TAG, "应用刷新率已切换: $res @ ${hz}Hz (modeId=${target.modeId})")
         } catch (e: Exception) {
             Log.e(TAG, "应用刷新率切换失败: ${e.message}")
         }
