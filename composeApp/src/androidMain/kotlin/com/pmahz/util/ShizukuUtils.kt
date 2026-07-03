@@ -164,9 +164,14 @@ object ShizukuUtils {
         Log.d(TAG, "steppedSwitch complete: target=${targetHz}Hz")
     }
 
-    fun steppedDecrease(allModes: List<DisplayMode>, currentHz: Int, targetHz: Int, isCancelled: () -> Boolean = { false }) {
+    fun steppedDecrease(allModes: List<DisplayMode>, currentHz: Int, targetHz: Int, isCancelled: () -> Boolean = { false }, targetMode: DisplayMode? = null) {
         if (currentHz <= targetHz) return
-        val steps = allModes
+        val resFilter = if (targetMode != null) {
+            allModes.filter { it.width == targetMode.width && it.height == targetMode.height }
+        } else {
+            allModes
+        }
+        val steps = resFilter
             .filter { it.rateInt in targetHz until currentHz }
             .sortedByDescending { it.rateInt }
         Log.d(TAG, "steppedDecrease: currentHz=$currentHz → targetHz=$targetHz, steps=${steps.map { it.rateInt }}")
