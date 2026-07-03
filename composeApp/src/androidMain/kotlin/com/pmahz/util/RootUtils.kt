@@ -30,8 +30,12 @@ object RootUtils {
             val stdin = DataOutputStream(process.outputStream)
             stdin.writeBytes("$script\nexit\n")
             stdin.flush()
-            process.waitFor()
-            process.exitValue() == 0
+            val exitCode = process.waitFor()
+            if (exitCode != 0) {
+                val err = BufferedReader(InputStreamReader(process.errorStream)).readText().trim()
+                Log.e(TAG, "execRoot FAILED: exitCode=$exitCode, err=$err, script=${script.take(200)}")
+            }
+            exitCode == 0
         } catch (e: Exception) {
             Log.e(TAG, "execRoot failed: ${e.message}")
             false
@@ -73,9 +77,11 @@ object RootUtils {
     }
 
     fun setRate(dumpsysModeId: Int?, targetHz: Int): Boolean {
+        val sfIndex = if (dumpsysModeId != null && dumpsysModeId > 0) dumpsysModeId - 1 else null
+        Log.d(TAG, "setRate: modeId=$dumpsysModeId, hz=$targetHz, sfIndex=$sfIndex")
         val script = buildString {
-            if (dumpsysModeId != null && dumpsysModeId > 0) {
-                appendLine("service call SurfaceFlinger 1035 i32 ${dumpsysModeId - 1}")
+            if (sfIndex != null) {
+                appendLine("service call SurfaceFlinger 1035 i32 $sfIndex")
             }
             appendLine("settings put system peak_refresh_rate ${targetHz}.0")
             appendLine("settings put system min_refresh_rate ${targetHz}.0")
@@ -83,7 +89,9 @@ object RootUtils {
             appendLine("settings put secure miui_refresh_rate $targetHz")
             appendLine("settings put system thermal_limit_refresh_rate $targetHz 2>/dev/null")
         }
-        return execRoot(script.trimEnd())
+        val result = execRoot(script.trimEnd())
+        Log.d(TAG, "setRate result: $result")
+        return result
     }
 
     fun setDisplayMode(width: Int, height: Int, hz: Int, sfIndex: Int): Boolean {
@@ -125,9 +133,10 @@ object RootUtils {
         val targetHz = targetMode.rateInt
         if (currentHz < targetHz) {
             val steps = allModes
+                .filter { it.width == targetMode.width && it.height == targetMode.height }
                 .filter { it.rateInt > currentHz && it.rateInt <= targetHz }
                 .sortedBy { it.rateInt }
-            Log.d(TAG, "steppedSwitch: currentHz=$currentHz → targetHz=$targetHz, steps=${steps.map { it.rateInt }}")
+            Log.d(TAG, "steppedSwitch: currentHz=$currentHz → targetHz=$targetHz, res=${targetMode.width}x${targetMode.height}, steps=${steps.map { it.rateInt }}")
             for (step in steps) {
                 if (isCancelled()) {
                     Log.d(TAG, "steppedSwitch cancelled at ${step.rateInt}Hz")
@@ -144,9 +153,14 @@ object RootUtils {
         Log.d(TAG, "steppedSwitch complete: target=${targetHz}Hz")
     }
 
-    fun steppedDecrease(allModes: List<DisplayMode>, currentHz: Int, targetHz: Int, isCancelled: () -> Boolean = { false }) {
+    fun steppedDecrease(allModes: List<DisplayMode>, currentHz: Int, targetHz: Int, isCancelled: () -> Boolean = { false }, targetMode: DisplayMode? = null) {
         if (currentHz <= targetHz) return
-        val steps = allModes
+        val resFilter = if (targetMode != null) {
+            allModes.filter { it.width == targetMode.width && it.height == targetMode.height }
+        } else {
+            allModes
+        }
+        val steps = resFilter
             .filter { it.rateInt in targetHz until currentHz }
             .sortedByDescending { it.rateInt }
         Log.d(TAG, "steppedDecrease: currentHz=$currentHz → targetHz=$targetHz, steps=${steps.map { it.rateInt }}")
