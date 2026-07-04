@@ -160,12 +160,12 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                         } else {
                             Log.i(TAG, "开始下降: currentHz=$currentHz → 120Hz")
                             when (authMode) {
-                                "root" -> RootUtils.steppedDecrease(allModes, currentHz, 120) {
+                                "root" -> RootUtils.steppedDecrease(allModes, currentHz, 120, isCancelled = {
                                     prefs.getString("last_applied_config", "")?.isNotEmpty() == true
-                                }
-                                "shizuku" -> ShizukuUtils.steppedDecrease(allModes, currentHz, 120) {
+                                })
+                                "shizuku" -> ShizukuUtils.steppedDecrease(allModes, currentHz, 120, isCancelled = {
                                     prefs.getString("last_applied_config", "")?.isNotEmpty() == true
-                                }
+                                })
                             }
                         }
                         Log.i(TAG, "已下降到 120Hz")
