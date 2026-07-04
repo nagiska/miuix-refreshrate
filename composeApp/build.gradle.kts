@@ -40,11 +40,11 @@ kotlin {
 }
 
 android {
-    namespace = "com.pmahz"
+    namespace = "com.refreshrate.control"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.pmahz"
+        applicationId = "com.refreshrate.control"
         minSdk = 33
         targetSdk = 37
         versionCode = 1
