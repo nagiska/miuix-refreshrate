@@ -20,7 +20,6 @@ import com.refreshrate.control.MainActivity
 import com.refreshrate.control.model.DisplayMode
 import com.refreshrate.control.util.AutoOverclockManager
 import com.refreshrate.control.util.RootUtils
-import com.refreshrate.control.util.ShizukuUtils
 
 class KeepAliveAccessibilityService : AccessibilityService() {
     companion object {
@@ -72,7 +71,6 @@ class KeepAliveAccessibilityService : AccessibilityService() {
             }
         }.start()
 
-        checkAndRestartService()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -118,24 +116,16 @@ class KeepAliveAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {
         Log.d(TAG, "无障碍服务中断")
-        checkAndRestartService()
     }
 
     override fun onDestroy() {
         super.onDestroy()
         Log.d(TAG, "无障碍服务销毁")
-        checkAndRestartService()
     }
 
     private fun applyForPackage(basePkg: String) {
         if (basePkg.isEmpty() || basePkg == "android" || basePkg == packageName) return
         val prefs = getSharedPreferences("s", Context.MODE_PRIVATE) ?: return
-
-        val authMode = prefs.getString("auth_mode", "") ?: ""
-        if (authMode.isEmpty()) {
-            Log.d(TAG, "auth_mode 为空，跳过")
-            return
-        }
 
         val effectivePkg = resolveEffectivePkg(prefs, basePkg)
         val enabled = prefs.getBoolean("app_refresh_enabled_$effectivePkg", false)
@@ -153,19 +143,17 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                         val allModes = AutoOverclockManager.getSupportedModes(this)
                         if (allModes.isEmpty()) {
                             Log.w(TAG, "模式列表为空，仅设置 settings")
-                            when (authMode) {
-                                "root" -> RootUtils.setRate(null, 120)
-                                "shizuku" -> ShizukuUtils.setRate(null, 120)
-                            }
+                            RootUtils.setRate(null, 120)
                         } else {
-                            Log.i(TAG, "开始下降: currentHz=$currentHz → 120Hz")
-                            when (authMode) {
-                                "root" -> RootUtils.steppedDecrease(allModes, currentHz, 120, isCancelled = {
+                            val currentMode = AutoOverclockManager.getCurrentMode(this)
+                            val target = RootUtils.findBestTargetForHz(allModes, currentMode, 120)
+                            if (target != null) {
+                                Log.i(TAG, "开始下降: currentHz=$currentHz → ${target.rateInt}Hz")
+                                RootUtils.switchRefreshRate(target, allModes, currentHz) {
                                     prefs.getString("last_applied_config", "")?.isNotEmpty() == true
-                                })
-                                "shizuku" -> ShizukuUtils.steppedDecrease(allModes, currentHz, 120, isCancelled = {
-                                    prefs.getString("last_applied_config", "")?.isNotEmpty() == true
-                                })
+                                }
+                            } else {
+                                RootUtils.setRate(null, 120)
                             }
                         }
                         Log.i(TAG, "已下降到 120Hz")
@@ -192,8 +180,8 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         currentFgPackage = basePkg
         lastAppliedConfig = configKey
         prefs.edit().putString("last_applied_config", configKey).apply()
-        Log.i(TAG, "自定义刷新率切换: $effectivePkg → $res @ ${hz}Hz (auth=$authMode)")
-        applyDisplayTarget(authMode, res, hz, configKey)
+        Log.i(TAG, "自定义刷新率切换: $effectivePkg → $res @ ${hz}Hz")
+        applyDisplayTarget(res, hz, configKey)
     }
 
     private fun resolveEffectivePkg(prefs: SharedPreferences, basePkg: String): String {
@@ -221,7 +209,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         return basePkg
     }
 
-    private fun applyDisplayTarget(authMode: String, res: String, hz: Int, configKey: String) {
+    private fun applyDisplayTarget(res: String, hz: Int, configKey: String) {
         try {
             val wh = res.split("x")
             if (wh.size != 2) return
@@ -249,20 +237,14 @@ class KeepAliveAccessibilityService : AccessibilityService() {
 
             if (target == null) {
                 Log.w(TAG, "未找到匹配模式，仅设置 settings: $res @ ${hz}Hz")
-                when (authMode) {
-                    "root" -> RootUtils.setRate(null, hz)
-                    "shizuku" -> ShizukuUtils.setRate(null, hz)
-                }
+                RootUtils.setRate(null, hz)
                 return
             }
 
             val currentHz = AutoOverclockManager.getCurrentRefreshRate(this)
             val allModes = modes
             Log.i(TAG, "开始切换: currentHz=$currentHz → targetHz=${target.rateInt}, modeId=${target.modeId}")
-            when (authMode) {
-                "root" -> RootUtils.steppedSwitch(target, allModes, currentHz) { lastAppliedConfig != configKey }
-                "shizuku" -> ShizukuUtils.steppedSwitch(target, allModes, currentHz) { lastAppliedConfig != configKey }
-            }
+            RootUtils.switchRefreshRate(target, allModes, currentHz) { lastAppliedConfig != configKey }
             Log.d(TAG, "应用刷新率已切换: $res @ ${hz}Hz (modeId=${target.modeId})")
         } catch (e: Exception) {
             Log.e(TAG, "应用刷新率切换失败: ${e.message}")
@@ -410,31 +392,6 @@ class KeepAliveAccessibilityService : AccessibilityService() {
             val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             nm.cancel(CUSTOM_NOTIF_ID)
         } catch (e: Exception) {
-        }
-    }
-
-    private fun checkAndRestartService() {
-        val prefs = getSharedPreferences("s", Context.MODE_PRIVATE) ?: return
-        if (!prefs.getBoolean("auto_overclock", false)) return
-        val authMode = prefs.getString("auth_mode", "") ?: ""
-        val ocRes = prefs.getString("oc_target_res", "") ?: ""
-        val ocHz = prefs.getInt("oc_target_hz", -1)
-        if (authMode.isEmpty() || ocRes.isEmpty() || ocHz < 0) return
-
-        val wh = ocRes.split("x")
-        if (wh.size < 2) return
-        try {
-            val tw = wh[0].toInt()
-            val th = wh[1].toInt()
-            val si = Intent(this, OverclockService::class.java).apply {
-                putExtra("auth_mode", authMode)
-                putExtra("targetW", tw)
-                putExtra("targetH", th)
-                putExtra("targetHz", ocHz)
-            }
-            if (Build.VERSION.SDK_INT >= 26) startForegroundService(si) else startService(si)
-        } catch (e: Exception) {
-            Log.e(TAG, "重启服务失败: ${e.message}")
         }
     }
 }

@@ -33,8 +33,6 @@ kotlin {
         androidMain.dependencies {
             implementation(libs.androidx.activity.compose)
             implementation(libs.androidx.lifecycle.runtime)
-            implementation(libs.shizuku.api)
-            implementation(libs.shizuku.provider)
         }
     }
 }

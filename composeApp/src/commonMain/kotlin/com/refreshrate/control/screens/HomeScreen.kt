@@ -73,7 +73,6 @@ fun HomeScreen(
             Text(
                 text = when (authMode) {
                     "root" -> "Root"
-                    "shizuku" -> "Shizuku"
                     else -> "未授权"
                 },
                 style = MiuixTheme.textStyles.footnote2,
@@ -219,7 +218,6 @@ private fun StatusCard(
                 Text(
                     text = when (authMode) {
                         "root" -> "授权方式: Root"
-                        "shizuku" -> "授权方式: Shizuku"
                         else -> "未授权"
                     },
                     style = MiuixTheme.textStyles.footnote1,

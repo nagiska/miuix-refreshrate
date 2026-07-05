@@ -29,12 +29,7 @@ data class DisplayData(
 
 data class SettingsData(
     val authMode: String,
-    val autoOverclock: Boolean,
-    val ocTargetRes: String,
-    val ocTargetHz: Int,
     val rootAvailable: Boolean,
-    val shizukuAvailable: Boolean,
-    val shizukuHasPermission: Boolean,
     val customAppRefresh: Boolean
 )
 
@@ -57,8 +52,6 @@ data class AppInfoWithIcon(
 expect fun loadSettingsData(): SettingsData?
 
 expect fun saveAuthMode(context: AppContext, mode: String)
-
-expect fun saveAutoOverclock(context: AppContext, enabled: Boolean, res: String, hz: Int)
 
 expect fun saveCustomAppRefresh(context: AppContext, enabled: Boolean)
 

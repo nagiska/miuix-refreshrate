@@ -19,26 +19,6 @@ object PrefsHelper {
         prefs(context).edit().putString("auth_mode", mode).apply()
     }
 
-    fun isAutoOverclock(context: Context): Boolean =
-        prefs(context).getBoolean("auto_overclock", false)
-
-    fun setAutoOverclock(context: Context, enabled: Boolean) {
-        prefs(context).edit().putBoolean("auto_overclock", enabled).apply()
-    }
-
-    fun getOcTargetRes(context: Context): String =
-        prefs(context).getString("oc_target_res", "") ?: ""
-
-    fun getOcTargetHz(context: Context): Int =
-        prefs(context).getInt("oc_target_hz", -1)
-
-    fun setOcTarget(context: Context, res: String, hz: Int) {
-        prefs(context).edit()
-            .putString("oc_target_res", res)
-            .putInt("oc_target_hz", hz)
-            .apply()
-    }
-
     fun isCustomAppRefresh(context: Context): Boolean =
         prefs(context).getBoolean("custom_app_refresh", false)
 

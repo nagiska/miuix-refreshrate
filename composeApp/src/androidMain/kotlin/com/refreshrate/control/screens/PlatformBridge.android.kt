@@ -19,7 +19,6 @@ import com.refreshrate.control.model.DisplayMode
 import com.refreshrate.control.util.AutoOverclockManager
 import com.refreshrate.control.util.PrefsHelper
 import com.refreshrate.control.util.RootUtils
-import com.refreshrate.control.util.ShizukuUtils
 
 actual class AppContext(val context: Context)
 
@@ -35,16 +34,21 @@ actual fun refreshDisplayData(refreshKey: Int): DisplayData? {
     var data by remember { mutableStateOf<DisplayData?>(null) }
 
     LaunchedEffect(refreshKey) {
-        try {
-            // Small delay to let display mode settle
-            if (refreshKey > 0) kotlinx.coroutines.delay(300)
-            val authMode = PrefsHelper.getAuthMode(context)
-            val current = AutoOverclockManager.getCurrentMode(context)
-            val modes = AutoOverclockManager.getSupportedModes(context)
-            val grouped = AutoOverclockManager.groupByResolution(modes)
-                .entries.map { it.key to it.value }.toList()
-            data = DisplayData(current, authMode, grouped)
-        } catch (e: Exception) {
+        if (refreshKey > 0) kotlinx.coroutines.delay(300)
+        var modeGroups: List<Pair<String, List<DisplayMode>>> = emptyList()
+        while (true) {
+            try {
+                val authMode = PrefsHelper.getAuthMode(context).ifEmpty { "root" }
+                val current = AutoOverclockManager.getCurrentMode(context)
+                if (modeGroups.isEmpty()) {
+                    val modes = AutoOverclockManager.getSupportedModes(context)
+                    modeGroups = AutoOverclockManager.groupByResolution(modes)
+                        .entries.map { it.key to it.value }.toList()
+                }
+                data = DisplayData(current, authMode, modeGroups)
+            } catch (e: Exception) {
+            }
+            kotlinx.coroutines.delay(1000)
         }
     }
 
@@ -57,10 +61,7 @@ actual fun applyDisplayMode(authMode: String, mode: DisplayMode, context: AppCon
             val ctx = context.context
             val currentHz = com.refreshrate.control.util.AutoOverclockManager.getCurrentRefreshRate(ctx)
             val allModes = com.refreshrate.control.util.AutoOverclockManager.getSupportedModes(ctx)
-            when (authMode) {
-                "root" -> com.refreshrate.control.util.RootUtils.steppedSwitch(mode, allModes, currentHz)
-                "shizuku" -> com.refreshrate.control.util.ShizukuUtils.steppedSwitch(mode, allModes, currentHz)
-            }
+            com.refreshrate.control.util.RootUtils.switchRefreshRate(mode, allModes, currentHz)
         } catch (e: Exception) {
             android.util.Log.e("PlatformBridge", "applyDisplayMode failed: ${e.message}")
         }
@@ -74,17 +75,12 @@ actual fun loadSettingsData(): SettingsData? {
 
     LaunchedEffect(Unit) {
         try {
-            val authMode = PrefsHelper.getAuthMode(context)
-            val autoOverclock = PrefsHelper.isAutoOverclock(context)
-            val ocRes = PrefsHelper.getOcTargetRes(context)
-            val ocHz = PrefsHelper.getOcTargetHz(context)
+            val authMode = PrefsHelper.getAuthMode(context).ifEmpty { "root" }
             val rootAvailable = RootUtils.isRootAvailable()
-            val shizukuAvailable = ShizukuUtils.isShizukuAvailable()
-            val shizukuHasPermission = ShizukuUtils.hasPermission()
             val customAppRefresh = PrefsHelper.isCustomAppRefresh(context)
             data = SettingsData(
-                authMode, autoOverclock, ocRes, ocHz,
-                rootAvailable, shizukuAvailable, shizukuHasPermission,
+                authMode,
+                rootAvailable,
                 customAppRefresh
             )
         } catch (e: Exception) {
@@ -95,14 +91,7 @@ actual fun loadSettingsData(): SettingsData? {
 }
 
 actual fun saveAuthMode(context: AppContext, mode: String) {
-    PrefsHelper.setAuthMode(context.context, mode)
-}
-
-actual fun saveAutoOverclock(context: AppContext, enabled: Boolean, res: String, hz: Int) {
-    PrefsHelper.setAutoOverclock(context.context, enabled)
-    if (enabled && res.isNotEmpty() && hz > 0) {
-        PrefsHelper.setOcTarget(context.context, res, hz)
-    }
+    PrefsHelper.setAuthMode(context.context, "root")
 }
 
 actual fun saveCustomAppRefresh(context: AppContext, enabled: Boolean) {
@@ -281,14 +270,7 @@ actual fun testRefreshRateSwitch(authMode: String): Boolean {
         }
         val mode = modes.first()
         android.util.Log.d("TestSwitch", "Testing: ${mode.width}x${mode.height} @ ${mode.rateInt}Hz, sfIndex=${mode.sfIndex}")
-        when (authMode) {
-            "root" -> com.refreshrate.control.util.RootUtils.setDisplayMode(mode.width, mode.height, mode.rateInt, mode.sfIndex)
-            "shizuku" -> com.refreshrate.control.util.ShizukuUtils.setDisplayMode(mode.width, mode.height, mode.rateInt, mode.sfIndex)
-            else -> {
-                android.util.Log.w("TestSwitch", "Invalid authMode: $authMode")
-                false
-            }
-        }
+        com.refreshrate.control.util.RootUtils.setDisplayMode(mode.width, mode.height, mode.rateInt, mode.sfIndex)
     } catch (e: Exception) {
         android.util.Log.e("TestSwitch", "Test failed: ${e.message}")
         false

@@ -12,9 +12,8 @@ object AutoOverclockManager {
         val prefs = context.getSharedPreferences("s", Context.MODE_PRIVATE)
         val authMode = prefs.getString("auth_mode", "") ?: ""
 
-        val modes = when (authMode) {
+        val modes = when (authMode.ifEmpty { "root" }) {
             "root" -> RootUtils.scanModesFromDumpsys()
-            "shizuku" -> ShizukuUtils.scanModesFromDumpsys()
             else -> {
                 try {
                     val dm = context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager

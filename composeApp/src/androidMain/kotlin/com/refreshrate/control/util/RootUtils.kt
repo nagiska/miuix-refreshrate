@@ -5,6 +5,8 @@ import com.refreshrate.control.model.DisplayMode
 import java.io.BufferedReader
 import java.io.DataOutputStream
 import java.io.InputStreamReader
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 object RootUtils {
     private const val TAG = "RootUtils"
@@ -66,7 +68,7 @@ object RootUtils {
             val id = match.groupValues[1].toIntOrNull() ?: continue
             val w = match.groupValues[2].toIntOrNull() ?: continue
             val h = match.groupValues[3].toIntOrNull() ?: continue
-            val fps = match.groupValues[4].toFloatOrNull()?.toInt() ?: continue
+            val fps = match.groupValues[4].toFloatOrNull()?.roundToInt() ?: continue
             if (fps in 30..300) {
                 val dm = DisplayMode(w, h, fps.toFloat(), id)
                 dm.sfIndex = id
@@ -130,6 +132,10 @@ object RootUtils {
     }
 
     fun steppedSwitch(targetMode: DisplayMode, allModes: List<DisplayMode>, currentHz: Int, isCancelled: () -> Boolean = { false }) {
+        switchRefreshRate(targetMode, allModes, currentHz, isCancelled)
+    }
+
+    fun switchRefreshRate(targetMode: DisplayMode, allModes: List<DisplayMode>, currentHz: Int, isCancelled: () -> Boolean = { false }) {
         val targetHz = targetMode.rateInt
         if (currentHz < targetHz) {
             val steps = allModes
@@ -146,11 +152,15 @@ object RootUtils {
                 setRate(step.modeId, step.rateInt)
                 try { Thread.sleep(800) } catch (e: InterruptedException) { break }
             }
+        } else if (currentHz > targetHz) {
+            steppedDecrease(allModes, currentHz, targetHz, isCancelled, targetMode)
         } else {
             Log.d(TAG, "direct switch to ${targetHz}Hz (modeId=${targetMode.modeId})")
+        }
+        if (!isCancelled()) {
             setRate(targetMode.modeId, targetHz)
         }
-        Log.d(TAG, "steppedSwitch complete: target=${targetHz}Hz")
+        Log.d(TAG, "switchRefreshRate complete: target=${targetHz}Hz")
     }
 
     fun steppedDecrease(allModes: List<DisplayMode>, currentHz: Int, targetHz: Int, isCancelled: () -> Boolean = { false }, targetMode: DisplayMode? = null) {
@@ -170,5 +180,19 @@ object RootUtils {
             setRate(step.modeId, step.rateInt)
             try { Thread.sleep(500) } catch (e: InterruptedException) { break }
         }
+    }
+
+    fun findBestTargetForHz(allModes: List<DisplayMode>, currentMode: DisplayMode?, targetHz: Int): DisplayMode? {
+        if (allModes.isEmpty()) return null
+        val sameResolution = if (currentMode != null) {
+            allModes.filter { it.width == currentMode.width && it.height == currentMode.height }
+        } else {
+            emptyList()
+        }
+        val candidates = sameResolution.ifEmpty { allModes }
+        return candidates
+            .filter { it.rateInt <= targetHz }
+            .maxByOrNull { it.rateInt }
+            ?: candidates.minByOrNull { abs(it.rateInt - targetHz) }
     }
 }
