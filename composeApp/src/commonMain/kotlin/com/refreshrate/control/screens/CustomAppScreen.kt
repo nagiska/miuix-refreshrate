@@ -1,6 +1,7 @@
 package com.refreshrate.control.screens
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -60,9 +61,10 @@ fun CustomAppScreen(
             )
     }
 
-    Column(modifier = modifier) {
+    Column(modifier = modifier.background(MiuixTheme.colorScheme.background)) {
         SmallTopAppBar(
             title = "应用",
+            color = MiuixTheme.colorScheme.background,
             actions = {
                 // System apps toggle
                 Text(

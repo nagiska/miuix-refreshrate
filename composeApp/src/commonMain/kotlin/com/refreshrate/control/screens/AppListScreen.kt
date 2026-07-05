@@ -1,6 +1,7 @@
 package com.refreshrate.control.screens
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -51,12 +52,16 @@ fun AppListScreen(
 
     Scaffold(
         topBar = {
-            SmallTopAppBar(title = "选择应用")
+            SmallTopAppBar(
+                title = "选择应用",
+                color = MiuixTheme.colorScheme.background
+            )
         }
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .background(MiuixTheme.colorScheme.background)
                 .padding(paddingValues)
         ) {
             Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
