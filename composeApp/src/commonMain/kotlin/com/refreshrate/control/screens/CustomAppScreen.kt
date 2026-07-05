@@ -87,7 +87,7 @@ fun CustomAppScreen(
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp)
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 120.dp)
         ) {
             items(filteredApps, key = { it.packageName }) { app ->
                 val isConfigured = app.packageName in enabledPkgs

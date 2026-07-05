@@ -97,5 +97,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 onClick = { refreshKey++ }
             )
         }
+
+        Spacer(Modifier.height(120.dp))
     }
 }

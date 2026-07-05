@@ -5,9 +5,15 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -18,14 +24,14 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import top.yukonga.miuix.kmp.basic.NavigationBar
-import top.yukonga.miuix.kmp.basic.NavigationBarItem
+import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.NavigationItem
-import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.blur.BlendColorEntry
 import top.yukonga.miuix.kmp.blur.BlurBlendMode
 import top.yukonga.miuix.kmp.blur.BlurDefaults
@@ -124,58 +130,94 @@ private fun MainScaffold(
     val blurColors = BlurDefaults.blurColors(
         blendColors = listOf(
             BlendColorEntry(
-                color = if (isDark) Color.Black.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.45f),
+                color = if (isDark) Color.Black.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.28f),
                 mode = BlurBlendMode.SrcOver
             )
         ),
         saturation = 1.25f
     )
 
-    Scaffold(
-        bottomBar = {
-            androidx.compose.foundation.layout.Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-                    .safeDrawingPadding()
-                    .clip(RoundedCornerShape(28.dp))
-                    .textureBlur(
-                        backdrop = backdrop,
-                        shape = RoundedCornerShape(28.dp),
-                        blurRadius = 36f,
-                        colors = blurColors
-                    )
-            ) {
-                NavigationBar {
-                    items.forEachIndexed { index, item ->
-                        NavigationBarItem(
-                            selected = currentTab == index,
-                            onClick = { onTabChange(index) },
-                            icon = item.icon,
-                            label = item.label
-                        )
-                    }
-                }
-            }
-        }
-    ) { paddingValues ->
-        androidx.compose.foundation.layout.Box(
+    Box(modifier = Modifier.fillMaxSize()) {
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .layerBackdrop(backdrop)
         ) {
             when (currentTab) {
                 0 -> HomeScreen(
-                    modifier = Modifier.fillMaxSize().padding(paddingValues),
+                    modifier = Modifier.fillMaxSize(),
                     onNavigateToTab = { onTabChange(1) }
                 )
                 1 -> CustomAppScreen(
-                    modifier = Modifier.fillMaxSize().padding(paddingValues),
+                    modifier = Modifier.fillMaxSize(),
                     onNavigateToAppList = onNavigateToAppList,
                     onNavigateToAppConfig = onNavigateToAppConfig
                 )
-                2 -> SettingsScreen(modifier = Modifier.fillMaxSize().padding(paddingValues))
+                2 -> SettingsScreen(modifier = Modifier.fillMaxSize())
             }
         }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .safeDrawingPadding()
+                .clip(RoundedCornerShape(28.dp))
+                .textureBlur(
+                    backdrop = backdrop,
+                    shape = RoundedCornerShape(28.dp),
+                    blurRadius = 36f,
+                    colors = blurColors
+                )
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(72.dp)
+                    .padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                items.forEachIndexed { index, item ->
+                    GlassNavigationItem(
+                        item = item,
+                        selected = currentTab == index,
+                        onClick = { onTabChange(index) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GlassNavigationItem(
+    item: NavigationItem,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val color = if (selected) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onBackgroundVariant
+
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(20.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            item.icon,
+            contentDescription = item.label,
+            tint = color
+        )
+        Text(
+            text = item.label,
+            style = MiuixTheme.textStyles.footnote2,
+            color = color
+        )
     }
 }
