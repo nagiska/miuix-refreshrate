@@ -1,5 +1,6 @@
 package com.refreshrate.control.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -42,10 +43,10 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    Column(modifier = modifier.verticalScroll(rememberScrollState())) {
+    Column(modifier = modifier.background(Color.Black).verticalScroll(rememberScrollState())) {
         SmallTopAppBar(
             title = "设置",
-            color = MiuixTheme.colorScheme.background
+            color = Color.Black
         )
 
         SmallTitle("授权管理")

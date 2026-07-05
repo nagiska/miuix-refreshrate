@@ -1,6 +1,7 @@
 package com.refreshrate.control.screens
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -60,10 +61,10 @@ fun CustomAppScreen(
             )
     }
 
-    Column(modifier = modifier) {
+    Column(modifier = modifier.background(Color.Black)) {
         SmallTopAppBar(
             title = "应用",
-            color = MiuixTheme.colorScheme.background,
+            color = Color.Black,
             actions = {
                 // System apps toggle
                 Text(
@@ -77,12 +78,16 @@ fun CustomAppScreen(
             }
         )
 
-        // Search bar
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
             TextField(
                 value = searchText,
                 onValueChange = { searchText = it },
-                label = "搜索应用"
+                label = "搜索应用",
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
             )
         }
 
