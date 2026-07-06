@@ -182,6 +182,21 @@ actual fun clearRuntimeLogs(context: AppContext) {
     RuntimeLog.clear(context.context)
 }
 
+actual fun exportRuntimeLogs(context: AppContext) {
+    val logs = RuntimeLog.read(context.context).asReversed().joinToString("\n")
+    val text = logs.ifBlank { "暂无运行日志" }
+    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, "刷新率运行日志")
+        putExtra(Intent.EXTRA_TEXT, text)
+        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+    }
+    val chooser = Intent.createChooser(sendIntent, "导出运行日志").apply {
+        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+    }
+    context.context.startActivity(chooser)
+}
+
 @Composable
 actual fun loadEnabledAppsWithIcons(): List<EnabledAppData> {
     return loadEnabledApps()

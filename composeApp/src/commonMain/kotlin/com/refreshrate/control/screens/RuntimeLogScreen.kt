@@ -60,8 +60,13 @@ fun RuntimeLogScreen(onBack: () -> Unit) {
                     .padding(bottom = 8.dp)
             ) {
                 ArrowPreference(
-                    title = "清空日志",
+                    title = "导出日志",
                     summary = "当前 ${logs.size} 条",
+                    onClick = { exportRuntimeLogs(appContext) }
+                )
+                ArrowPreference(
+                    title = "清空日志",
+                    summary = "清空本地运行日志",
                     onClick = {
                         clearRuntimeLogs(appContext)
                         refreshKey++

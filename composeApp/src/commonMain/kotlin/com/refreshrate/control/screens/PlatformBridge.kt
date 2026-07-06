@@ -85,6 +85,8 @@ expect fun loadRuntimeLogs(refreshKey: Int = 0): List<String>
 
 expect fun clearRuntimeLogs(context: AppContext)
 
+expect fun exportRuntimeLogs(context: AppContext)
+
 @Composable
 expect fun getEnabledAppCount(): Int
 
