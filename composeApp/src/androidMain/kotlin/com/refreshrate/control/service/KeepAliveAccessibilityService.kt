@@ -26,6 +26,11 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         private const val TAG = "KeepAliveA11y"
         private const val CUSTOM_CHANNEL_ID = "custom_app_channel"
         private const val CUSTOM_NOTIF_ID = 1002
+        private const val KEY_LAST_APPLIED_CONFIG = "last_applied_config"
+        private const val KEY_RESTORE_WIDTH = "restore_width"
+        private const val KEY_RESTORE_HEIGHT = "restore_height"
+        private const val KEY_RESTORE_HZ = "restore_hz"
+        private const val KEY_RESTORE_MODE_ID = "restore_mode_id"
     }
 
     private var fgHandler: Handler? = null
@@ -40,6 +45,19 @@ class KeepAliveAccessibilityService : AccessibilityService() {
     private var restoreHz: Int = -1
     private var switchThread: Thread? = null
     @Volatile private var switchGeneration: Long = 0L
+    private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { sp, key ->
+        if ("custom_app_refresh" == key) {
+            if (sp.getBoolean("custom_app_refresh", false)) {
+                if (lastRealPkg.isEmpty()) {
+                    postWaitingNotification()
+                } else {
+                    updatePersistentNotification(lastRealPkg)
+                }
+            } else {
+                cancelCustomNotification()
+            }
+        }
+    }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -48,19 +66,8 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         createCustomChannel()
         servicePrefs = getSharedPreferences("s", Context.MODE_PRIVATE)
 
-        servicePrefs?.registerOnSharedPreferenceChangeListener { sp, key ->
-            if ("custom_app_refresh" == key) {
-                if (sp.getBoolean("custom_app_refresh", false)) {
-                    if (lastRealPkg.isEmpty()) {
-                        postWaitingNotification()
-                    } else {
-                        updatePersistentNotification(lastRealPkg)
-                    }
-                } else {
-                    cancelCustomNotification()
-                }
-            }
-        }
+        servicePrefs?.registerOnSharedPreferenceChangeListener(prefListener)
+        restoreStateFromPrefs(servicePrefs)
 
         if (servicePrefs?.getBoolean("custom_app_refresh", false) == true) {
             postWaitingNotification()
@@ -80,7 +87,8 @@ class KeepAliveAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
         val pkg = getTopForegroundPackage(event) ?: return
-        if (pkg.isEmpty() || pkg == packageName || pkg == "android") return
+        Log.i(TAG, "event type=${event.eventType}, eventPkg=${event.packageName}, topPkg=$pkg")
+        if (pkg.isEmpty()) return
         scheduleForegroundApply(pkg)
     }
 
@@ -125,25 +133,39 @@ class KeepAliveAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         super.onDestroy()
         Log.d(TAG, "无障碍服务销毁")
+        servicePrefs?.unregisterOnSharedPreferenceChangeListener(prefListener)
     }
 
     private fun applyForPackage(basePkg: String) {
-        if (basePkg.isEmpty() || basePkg == "android" || basePkg == packageName) return
+        if (basePkg.isEmpty()) return
         val prefs = getSharedPreferences("s", Context.MODE_PRIVATE) ?: return
         if (!prefs.getBoolean("custom_app_refresh", false)) {
-            prefs.edit().remove("last_applied_config").apply()
+            prefs.edit().remove(KEY_LAST_APPLIED_CONFIG).apply()
             lastAppliedConfig = ""
+            clearRestoreState(prefs)
             return
         }
 
-        val effectivePkg = resolveEffectivePkg(prefs, basePkg)
-        val enabled = prefs.getBoolean("app_refresh_enabled_$effectivePkg", false)
+        val effectivePkg = if (basePkg == "android" || basePkg == packageName) {
+            basePkg
+        } else {
+            resolveEffectivePkg(prefs, basePkg)
+        }
+        val enabled = basePkg != "android" && basePkg != packageName &&
+            prefs.getBoolean("app_refresh_enabled_$effectivePkg", false)
+
+        Log.i(
+            TAG,
+            "applyForPackage base=$basePkg effective=$effectivePkg enabled=$enabled " +
+                "custom=${prefs.getBoolean("custom_app_refresh", false)} " +
+                "lastApplied=$lastAppliedConfig restore=${restoreMode?.resolutionLabel}@${restoreHz}Hz gen=$switchGeneration"
+        )
 
         if (!enabled) {
-            val savedConfig = prefs.getString("last_applied_config", "") ?: ""
+            val savedConfig = prefs.getString(KEY_LAST_APPLIED_CONFIG, "") ?: ""
             if (savedConfig.isNotEmpty() || lastAppliedConfig.isNotEmpty() || restoreMode != null || restoreHz > 0) {
                 Log.i(TAG, "离开已配置应用 $effectivePkg，恢复进入前刷新率")
-                prefs.edit().remove("last_applied_config").apply()
+                prefs.edit().remove(KEY_LAST_APPLIED_CONFIG).apply()
                 lastAppliedConfig = ""
                 val generation = nextSwitchGeneration()
                 switchThread = Thread {
@@ -159,9 +181,15 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                             val target = restoreMode?.let { RootUtils.findBestTargetForMode(allModes, it) }
                                 ?: RootUtils.findBestTargetForHz(allModes, currentMode, targetHz)
                             if (target != null) {
-                                Log.i(TAG, "开始恢复: currentHz=$currentHz → ${target.rateInt}Hz")
+                                Log.i(
+                                    TAG,
+                                    "restore target=${target.resolutionLabel}@${target.rateInt}Hz modeId=${target.modeId}, currentHz=$currentHz"
+                                )
                                 RootUtils.switchRefreshRate(target, allModes, currentHz) {
                                     isSwitchCancelled(generation)
+                                }
+                                if (!isSwitchCancelled(generation)) {
+                                    RootUtils.setRate(target.modeId, target.rateInt)
                                 }
                             } else {
                                 Log.w(TAG, "未找到恢复模式，仅设置 settings 恢复到 ${targetHz}Hz")
@@ -170,8 +198,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                         }
                         if (!isSwitchCancelled(generation)) {
                             Log.i(TAG, "已恢复进入前刷新率")
-                            restoreMode = null
-                            restoreHz = -1
+                            clearRestoreState(prefs)
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "恢复失败: ${e.message}")
@@ -196,12 +223,13 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         if (restoreMode == null) {
             restoreMode = AutoOverclockManager.getCurrentMode(this)
             restoreHz = restoreMode?.rateInt ?: AutoOverclockManager.getCurrentRefreshRate(this)
+            saveRestoreState(prefs, restoreMode, restoreHz)
             Log.i(TAG, "记录进入前刷新率: ${restoreMode?.resolutionLabel ?: "?"} @ ${restoreHz}Hz")
         }
 
         currentFgPackage = basePkg
         lastAppliedConfig = configKey
-        prefs.edit().putString("last_applied_config", configKey).apply()
+        prefs.edit().putString(KEY_LAST_APPLIED_CONFIG, configKey).apply()
         Log.i(TAG, "自定义刷新率切换: $effectivePkg → $res @ ${hz}Hz")
         val generation = nextSwitchGeneration()
         switchThread = Thread {
@@ -216,6 +244,46 @@ class KeepAliveAccessibilityService : AccessibilityService() {
     }
 
     private fun isSwitchCancelled(generation: Long): Boolean = generation != switchGeneration
+
+    private fun saveRestoreState(prefs: SharedPreferences, mode: DisplayMode?, hz: Int) {
+        val editor = prefs.edit().putInt(KEY_RESTORE_HZ, hz)
+        if (mode != null) {
+            editor
+                .putInt(KEY_RESTORE_WIDTH, mode.width)
+                .putInt(KEY_RESTORE_HEIGHT, mode.height)
+                .putInt(KEY_RESTORE_MODE_ID, mode.modeId)
+        }
+        editor.apply()
+    }
+
+    private fun restoreStateFromPrefs(prefs: SharedPreferences?) {
+        if (prefs == null) return
+        val hz = prefs.getInt(KEY_RESTORE_HZ, -1)
+        val width = prefs.getInt(KEY_RESTORE_WIDTH, -1)
+        val height = prefs.getInt(KEY_RESTORE_HEIGHT, -1)
+        val modeId = prefs.getInt(KEY_RESTORE_MODE_ID, -1)
+        if (hz > 0) {
+            restoreHz = hz
+            if (width > 0 && height > 0 && modeId > 0) {
+                restoreMode = DisplayMode(width, height, hz.toFloat(), modeId).apply {
+                    sfIndex = modeId
+                }
+            }
+            lastAppliedConfig = prefs.getString(KEY_LAST_APPLIED_CONFIG, "") ?: ""
+            Log.i(TAG, "恢复持久化状态: lastApplied=$lastAppliedConfig restore=${restoreMode?.resolutionLabel}@${restoreHz}Hz")
+        }
+    }
+
+    private fun clearRestoreState(prefs: SharedPreferences? = servicePrefs) {
+        restoreMode = null
+        restoreHz = -1
+        prefs?.edit()
+            ?.remove(KEY_RESTORE_WIDTH)
+            ?.remove(KEY_RESTORE_HEIGHT)
+            ?.remove(KEY_RESTORE_HZ)
+            ?.remove(KEY_RESTORE_MODE_ID)
+            ?.apply()
+    }
 
     private fun resolveEffectivePkg(prefs: SharedPreferences, basePkg: String): String {
         try {
@@ -427,8 +495,8 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         try {
             nextSwitchGeneration()
             lastAppliedConfig = ""
-            restoreMode = null
-            restoreHz = -1
+            servicePrefs?.edit()?.remove(KEY_LAST_APPLIED_CONFIG)?.apply()
+            clearRestoreState(servicePrefs)
             val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             nm.cancel(CUSTOM_NOTIF_ID)
         } catch (e: Exception) {
