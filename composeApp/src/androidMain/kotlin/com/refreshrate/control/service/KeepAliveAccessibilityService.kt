@@ -146,13 +146,17 @@ class KeepAliveAccessibilityService : AccessibilityService() {
             return
         }
 
-        val effectivePkg = if (basePkg == "android" || basePkg == packageName) {
-            basePkg
-        } else {
-            resolveEffectivePkg(prefs, basePkg)
+        if (basePkg == "android" || basePkg == packageName) {
+            Log.i(
+                TAG,
+                "忽略瞬态前台窗口 base=$basePkg lastApplied=$lastAppliedConfig " +
+                    "restore=${restoreMode?.resolutionLabel}@${restoreHz}Hz"
+            )
+            return
         }
-        val enabled = basePkg != "android" && basePkg != packageName &&
-            prefs.getBoolean("app_refresh_enabled_$effectivePkg", false)
+
+        val effectivePkg = resolveEffectivePkg(prefs, basePkg)
+        val enabled = prefs.getBoolean("app_refresh_enabled_$effectivePkg", false)
 
         Log.i(
             TAG,
