@@ -45,6 +45,8 @@ class KeepAliveAccessibilityService : AccessibilityService() {
     private var restoreHz: Int = -1
     private var switchThread: Thread? = null
     @Volatile private var switchGeneration: Long = 0L
+    @Volatile private var restoreInProgress: Boolean = false
+    private var restoringToPackage: String = ""
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { sp, key ->
         if ("custom_app_refresh" == key) {
             if (sp.getBoolean("custom_app_refresh", false)) {
@@ -168,15 +170,22 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         if (!enabled) {
             val savedConfig = prefs.getString(KEY_LAST_APPLIED_CONFIG, "") ?: ""
             if (savedConfig.isNotEmpty() || lastAppliedConfig.isNotEmpty() || restoreMode != null || restoreHz > 0) {
+                if (restoreInProgress) {
+                    Log.i(TAG, "恢复中，忽略重复未配置应用事件 base=$basePkg effective=$effectivePkg gen=$switchGeneration")
+                    return
+                }
                 Log.i(TAG, "离开已配置应用 $effectivePkg，恢复进入前刷新率")
                 prefs.edit().remove(KEY_LAST_APPLIED_CONFIG).apply()
                 lastAppliedConfig = ""
                 val generation = nextSwitchGeneration()
+                restoreInProgress = true
+                restoringToPackage = effectivePkg
                 switchThread = Thread {
                     try {
                         val targetHz = restoreHz.takeIf { it > 0 } ?: 120
                         val currentHz = AutoOverclockManager.getCurrentRefreshRate(this)
                         val allModes = cachedModes.ifEmpty { AutoOverclockManager.getSupportedModes(this) }
+                        var restoreTargetHz = targetHz
                         if (allModes.isEmpty()) {
                             Log.w(TAG, "模式列表为空，仅设置 settings 恢复到 ${targetHz}Hz")
                             if (!isSwitchCancelled(generation)) RootUtils.setRate(null, targetHz)
@@ -185,6 +194,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                             val target = restoreMode?.let { RootUtils.findBestTargetForMode(allModes, it) }
                                 ?: RootUtils.findBestTargetForHz(allModes, currentMode, targetHz)
                             if (target != null) {
+                                restoreTargetHz = target.rateInt
                                 Log.i(
                                     TAG,
                                     "restore target=${target.resolutionLabel}@${target.rateInt}Hz modeId=${target.modeId}, currentHz=$currentHz"
@@ -201,11 +211,18 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                             }
                         }
                         if (!isSwitchCancelled(generation)) {
-                            Log.i(TAG, "已恢复进入前刷新率")
+                            try { Thread.sleep(500) } catch (e: InterruptedException) { }
+                            val finalHz = AutoOverclockManager.getCurrentRefreshRate(this)
+                            Log.i(TAG, "恢复完成 target=${restoreTargetHz}Hz current=${finalHz}Hz")
                             clearRestoreState(prefs)
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "恢复失败: ${e.message}")
+                    } finally {
+                        if (!isSwitchCancelled(generation)) {
+                            restoreInProgress = false
+                            restoringToPackage = ""
+                        }
                     }
                 }.apply { start() }
             }
@@ -236,6 +253,8 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         prefs.edit().putString(KEY_LAST_APPLIED_CONFIG, configKey).apply()
         Log.i(TAG, "自定义刷新率切换: $effectivePkg → $res @ ${hz}Hz")
         val generation = nextSwitchGeneration()
+        restoreInProgress = false
+        restoringToPackage = ""
         switchThread = Thread {
             applyDisplayTarget(res, hz, configKey, generation)
         }.apply { start() }
@@ -281,6 +300,8 @@ class KeepAliveAccessibilityService : AccessibilityService() {
     private fun clearRestoreState(prefs: SharedPreferences? = servicePrefs) {
         restoreMode = null
         restoreHz = -1
+        restoreInProgress = false
+        restoringToPackage = ""
         prefs?.edit()
             ?.remove(KEY_RESTORE_WIDTH)
             ?.remove(KEY_RESTORE_HEIGHT)
