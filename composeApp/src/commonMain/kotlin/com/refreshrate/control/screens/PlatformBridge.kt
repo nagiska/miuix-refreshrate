@@ -81,6 +81,11 @@ expect fun loadHzList(context: AppContext, resolution: String): List<Int>
 expect fun openAccessibilitySettings(context: AppContext)
 
 @Composable
+expect fun loadRuntimeLogs(refreshKey: Int = 0): List<String>
+
+expect fun clearRuntimeLogs(context: AppContext)
+
+@Composable
 expect fun getEnabledAppCount(): Int
 
 @Composable

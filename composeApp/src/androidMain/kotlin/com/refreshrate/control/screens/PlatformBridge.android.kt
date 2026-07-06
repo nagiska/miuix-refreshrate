@@ -19,6 +19,7 @@ import com.refreshrate.control.model.DisplayMode
 import com.refreshrate.control.util.AutoOverclockManager
 import com.refreshrate.control.util.PrefsHelper
 import com.refreshrate.control.util.RootUtils
+import com.refreshrate.control.util.RuntimeLog
 
 actual class AppContext(val context: Context)
 
@@ -163,6 +164,22 @@ actual fun openAccessibilitySettings(context: AppContext) {
         context.context.startActivity(intent)
     } catch (e: Exception) {
     }
+}
+
+@Composable
+actual fun loadRuntimeLogs(refreshKey: Int): List<String> {
+    val context = LocalContext.current
+    var logs by remember { mutableStateOf<List<String>>(emptyList()) }
+
+    LaunchedEffect(refreshKey) {
+        logs = RuntimeLog.read(context)
+    }
+
+    return logs
+}
+
+actual fun clearRuntimeLogs(context: AppContext) {
+    RuntimeLog.clear(context.context)
 }
 
 @Composable

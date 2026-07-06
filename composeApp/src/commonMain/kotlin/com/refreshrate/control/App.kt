@@ -51,10 +51,12 @@ import com.refreshrate.control.screens.CustomAppScreen
 import com.refreshrate.control.screens.SettingsScreen
 import com.refreshrate.control.screens.AppListScreen
 import com.refreshrate.control.screens.AppConfigScreen
+import com.refreshrate.control.screens.RuntimeLogScreen
 import com.refreshrate.control.theme.RefreshRateTheme
 
 sealed class SubScreen {
     data object AppList : SubScreen()
+    data object RuntimeLog : SubScreen()
     data class AppConfig(val pkg: String, val label: String) : SubScreen()
 }
 
@@ -90,7 +92,8 @@ fun App() {
                         currentTab = currentTab,
                         onTabChange = { currentTab = it },
                         onNavigateToAppList = { navigationStack.add(SubScreen.AppList) },
-                        onNavigateToAppConfig = { pkg, label -> navigationStack.add(SubScreen.AppConfig(pkg, label)) }
+                        onNavigateToAppConfig = { pkg, label -> navigationStack.add(SubScreen.AppConfig(pkg, label)) },
+                        onNavigateToLogs = { navigationStack.add(SubScreen.RuntimeLog) }
                     )
                     is SubScreen.AppList -> AppListScreen(
                         onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
@@ -104,6 +107,9 @@ fun App() {
                         appLabel = subScreen.label,
                         onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
                     )
+                    SubScreen.RuntimeLog -> RuntimeLogScreen(
+                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
+                    )
                 }
             }
         }
@@ -115,7 +121,8 @@ private fun MainScaffold(
     currentTab: Int,
     onTabChange: (Int) -> Unit,
     onNavigateToAppList: () -> Unit,
-    onNavigateToAppConfig: (String, String) -> Unit
+    onNavigateToAppConfig: (String, String) -> Unit,
+    onNavigateToLogs: () -> Unit
 ) {
     val items = listOf(
         NavigationItem("首页", MiuixIcons.Refresh),
@@ -158,7 +165,10 @@ private fun MainScaffold(
                     onNavigateToAppList = onNavigateToAppList,
                     onNavigateToAppConfig = onNavigateToAppConfig
                 )
-                2 -> SettingsScreen(modifier = Modifier.fillMaxSize())
+                2 -> SettingsScreen(
+                    modifier = Modifier.fillMaxSize(),
+                    onNavigateToLogs = onNavigateToLogs
+                )
             }
         }
 
