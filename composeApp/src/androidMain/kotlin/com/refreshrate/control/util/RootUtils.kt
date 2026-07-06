@@ -195,4 +195,12 @@ object RootUtils {
             .maxByOrNull { it.rateInt }
             ?: candidates.minByOrNull { abs(it.rateInt - targetHz) }
     }
+
+    fun findBestTargetForMode(allModes: List<DisplayMode>, mode: DisplayMode): DisplayMode? {
+        if (allModes.isEmpty()) return null
+        val sameResolution = allModes.filter { it.width == mode.width && it.height == mode.height }
+        return sameResolution.firstOrNull { it.rateInt == mode.rateInt }
+            ?: sameResolution.minByOrNull { abs(it.rateInt - mode.rateInt) }
+            ?: allModes.minByOrNull { abs(it.rateInt - mode.rateInt) }
+    }
 }

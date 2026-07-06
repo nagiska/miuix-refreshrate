@@ -36,6 +36,10 @@ class KeepAliveAccessibilityService : AccessibilityService() {
     private var lastRealPkg: String = ""
     private var pendingApplyRunnable: Runnable? = null
     private var cachedModes: List<DisplayMode> = emptyList()
+    private var restoreMode: DisplayMode? = null
+    private var restoreHz: Int = -1
+    private var switchThread: Thread? = null
+    @Volatile private var switchGeneration: Long = 0L
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -126,41 +130,53 @@ class KeepAliveAccessibilityService : AccessibilityService() {
     private fun applyForPackage(basePkg: String) {
         if (basePkg.isEmpty() || basePkg == "android" || basePkg == packageName) return
         val prefs = getSharedPreferences("s", Context.MODE_PRIVATE) ?: return
+        if (!prefs.getBoolean("custom_app_refresh", false)) {
+            prefs.edit().remove("last_applied_config").apply()
+            lastAppliedConfig = ""
+            return
+        }
 
         val effectivePkg = resolveEffectivePkg(prefs, basePkg)
         val enabled = prefs.getBoolean("app_refresh_enabled_$effectivePkg", false)
 
         if (!enabled) {
-            // Not a configured app - check if we need to restore to 120Hz
             val savedConfig = prefs.getString("last_applied_config", "") ?: ""
-            if (savedConfig.isNotEmpty()) {
-                Log.i(TAG, "离开已配置应用 $effectivePkg，逐级下降到 120Hz")
+            if (savedConfig.isNotEmpty() || lastAppliedConfig.isNotEmpty() || restoreMode != null || restoreHz > 0) {
+                Log.i(TAG, "离开已配置应用 $effectivePkg，恢复进入前刷新率")
                 prefs.edit().remove("last_applied_config").apply()
                 lastAppliedConfig = ""
-                Thread {
+                val generation = nextSwitchGeneration()
+                switchThread = Thread {
                     try {
+                        val targetHz = restoreHz.takeIf { it > 0 } ?: 120
                         val currentHz = AutoOverclockManager.getCurrentRefreshRate(this)
-                        val allModes = AutoOverclockManager.getSupportedModes(this)
+                        val allModes = cachedModes.ifEmpty { AutoOverclockManager.getSupportedModes(this) }
                         if (allModes.isEmpty()) {
-                            Log.w(TAG, "模式列表为空，仅设置 settings")
-                            RootUtils.setRate(null, 120)
+                            Log.w(TAG, "模式列表为空，仅设置 settings 恢复到 ${targetHz}Hz")
+                            if (!isSwitchCancelled(generation)) RootUtils.setRate(null, targetHz)
                         } else {
                             val currentMode = AutoOverclockManager.getCurrentMode(this)
-                            val target = RootUtils.findBestTargetForHz(allModes, currentMode, 120)
+                            val target = restoreMode?.let { RootUtils.findBestTargetForMode(allModes, it) }
+                                ?: RootUtils.findBestTargetForHz(allModes, currentMode, targetHz)
                             if (target != null) {
-                                Log.i(TAG, "开始下降: currentHz=$currentHz → ${target.rateInt}Hz")
+                                Log.i(TAG, "开始恢复: currentHz=$currentHz → ${target.rateInt}Hz")
                                 RootUtils.switchRefreshRate(target, allModes, currentHz) {
-                                    prefs.getString("last_applied_config", "")?.isNotEmpty() == true
+                                    isSwitchCancelled(generation)
                                 }
                             } else {
-                                RootUtils.setRate(null, 120)
+                                Log.w(TAG, "未找到恢复模式，仅设置 settings 恢复到 ${targetHz}Hz")
+                                if (!isSwitchCancelled(generation)) RootUtils.setRate(null, targetHz)
                             }
                         }
-                        Log.i(TAG, "已下降到 120Hz")
+                        if (!isSwitchCancelled(generation)) {
+                            Log.i(TAG, "已恢复进入前刷新率")
+                            restoreMode = null
+                            restoreHz = -1
+                        }
                     } catch (e: Exception) {
-                        Log.e(TAG, "下降失败: ${e.message}")
+                        Log.e(TAG, "恢复失败: ${e.message}")
                     }
-                }.start()
+                }.apply { start() }
             }
             return
         }
@@ -177,12 +193,29 @@ class KeepAliveAccessibilityService : AccessibilityService() {
             return
         }
 
+        if (restoreMode == null) {
+            restoreMode = AutoOverclockManager.getCurrentMode(this)
+            restoreHz = restoreMode?.rateInt ?: AutoOverclockManager.getCurrentRefreshRate(this)
+            Log.i(TAG, "记录进入前刷新率: ${restoreMode?.resolutionLabel ?: "?"} @ ${restoreHz}Hz")
+        }
+
         currentFgPackage = basePkg
         lastAppliedConfig = configKey
         prefs.edit().putString("last_applied_config", configKey).apply()
         Log.i(TAG, "自定义刷新率切换: $effectivePkg → $res @ ${hz}Hz")
-        applyDisplayTarget(res, hz, configKey)
+        val generation = nextSwitchGeneration()
+        switchThread = Thread {
+            applyDisplayTarget(res, hz, configKey, generation)
+        }.apply { start() }
     }
+
+    private fun nextSwitchGeneration(): Long {
+        switchGeneration += 1
+        switchThread?.interrupt()
+        return switchGeneration
+    }
+
+    private fun isSwitchCancelled(generation: Long): Boolean = generation != switchGeneration
 
     private fun resolveEffectivePkg(prefs: SharedPreferences, basePkg: String): String {
         try {
@@ -209,7 +242,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         return basePkg
     }
 
-    private fun applyDisplayTarget(res: String, hz: Int, configKey: String) {
+    private fun applyDisplayTarget(res: String, hz: Int, configKey: String, generation: Long) {
         try {
             val wh = res.split("x")
             if (wh.size != 2) return
@@ -237,15 +270,19 @@ class KeepAliveAccessibilityService : AccessibilityService() {
 
             if (target == null) {
                 Log.w(TAG, "未找到匹配模式，仅设置 settings: $res @ ${hz}Hz")
-                RootUtils.setRate(null, hz)
+                if (!isSwitchCancelled(generation)) RootUtils.setRate(null, hz)
                 return
             }
 
             val currentHz = AutoOverclockManager.getCurrentRefreshRate(this)
             val allModes = modes
             Log.i(TAG, "开始切换: currentHz=$currentHz → targetHz=${target.rateInt}, modeId=${target.modeId}")
-            RootUtils.switchRefreshRate(target, allModes, currentHz) { lastAppliedConfig != configKey }
-            Log.d(TAG, "应用刷新率已切换: $res @ ${hz}Hz (modeId=${target.modeId})")
+            RootUtils.switchRefreshRate(target, allModes, currentHz) {
+                isSwitchCancelled(generation) || lastAppliedConfig != configKey
+            }
+            if (!isSwitchCancelled(generation) && lastAppliedConfig == configKey) {
+                Log.d(TAG, "应用刷新率已切换: $res @ ${hz}Hz (modeId=${target.modeId})")
+            }
         } catch (e: Exception) {
             Log.e(TAG, "应用刷新率切换失败: ${e.message}")
         }
@@ -388,7 +425,10 @@ class KeepAliveAccessibilityService : AccessibilityService() {
 
     private fun cancelCustomNotification() {
         try {
+            nextSwitchGeneration()
             lastAppliedConfig = ""
+            restoreMode = null
+            restoreHz = -1
             val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             nm.cancel(CUSTOM_NOTIF_ID)
         } catch (e: Exception) {
