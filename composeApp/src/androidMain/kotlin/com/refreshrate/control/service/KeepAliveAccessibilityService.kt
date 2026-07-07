@@ -7,10 +7,12 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.pm.ServiceInfo
 import android.hardware.display.DisplayManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -45,6 +47,8 @@ class KeepAliveAccessibilityService : AccessibilityService() {
     private var restoreMode: DisplayMode? = null
     private var restoreHz: Int = -1
     private var switchThread: Thread? = null
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var foregroundStarted: Boolean = false
     @Volatile private var switchGeneration: Long = 0L
     @Volatile private var restoreInProgress: Boolean = false
     private var restoringToPackage: String = ""
@@ -52,7 +56,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         if ("custom_app_refresh" == key) {
             if (sp.getBoolean("custom_app_refresh", false)) {
                 if (lastRealPkg.isEmpty()) {
-                    postWaitingNotification()
+                    ensureForeground("等待应用切换", "后台自动升降档运行中")
                 } else {
                     updatePersistentNotification(lastRealPkg)
                 }
@@ -66,7 +70,8 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         fgHandler = Handler(Looper.getMainLooper())
         Log.d(TAG, "无障碍服务已连接")
-        runtimeLog("无障碍服务已连接")
+        RuntimeLog.init(this)
+        runtimeLog("SERVICE connected")
         createCustomChannel()
         servicePrefs = getSharedPreferences("s", Context.MODE_PRIVATE)
 
@@ -74,17 +79,17 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         restoreStateFromPrefs(servicePrefs)
 
         if (servicePrefs?.getBoolean("custom_app_refresh", false) == true) {
-            postWaitingNotification()
+            ensureForeground("等待应用切换", "后台自动升降档运行中")
         }
 
         Thread {
             try {
                 cachedModes = AutoOverclockManager.getSupportedModes(this)
                 Log.d(TAG, "预扫描模式完成: ${cachedModes.size} 个模式")
-                runtimeLog("预扫描模式完成: ${cachedModes.size} 个模式")
+                runtimeLog("MODE cached=${cachedModes.size}")
             } catch (e: Exception) {
                 Log.e(TAG, "预扫描模式失败: ${e.message}")
-                runtimeLog("预扫描模式失败: ${e.message}")
+                runtimeLog("MODE cache failed=${e.message}")
             }
         }.start()
 
@@ -93,8 +98,6 @@ class KeepAliveAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
         val pkg = getTopForegroundPackage(event) ?: return
-        Log.i(TAG, "event type=${event.eventType}, eventPkg=${event.packageName}, topPkg=$pkg")
-        runtimeLog("event type=${event.eventType}, eventPkg=${event.packageName}, topPkg=$pkg")
         if (pkg.isEmpty()) return
         scheduleForegroundApply(pkg)
     }
@@ -165,6 +168,10 @@ class KeepAliveAccessibilityService : AccessibilityService() {
 
         val effectivePkg = resolveEffectivePkg(prefs, basePkg)
         val enabled = prefs.getBoolean("app_refresh_enabled_$effectivePkg", false)
+        if (basePkg != currentFgPackage) {
+            runtimeLog("FG base=$basePkg effective=$effectivePkg enabled=$enabled")
+            currentFgPackage = basePkg
+        }
 
         Log.i(
             TAG,
@@ -172,7 +179,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                 "custom=${prefs.getBoolean("custom_app_refresh", false)} " +
                 "lastApplied=$lastAppliedConfig restore=${restoreMode?.resolutionLabel}@${restoreHz}Hz gen=$switchGeneration"
         )
-        runtimeLog("前台=$basePkg effective=$effectivePkg enabled=$enabled lastApplied=$lastAppliedConfig restore=${restoreMode?.resolutionLabel}@${restoreHz}Hz gen=$switchGeneration")
+        runtimeLog("STATE last=$lastAppliedConfig restore=${restoreMode?.resolutionLabel}@${restoreHz}Hz gen=$switchGeneration")
 
         if (!enabled) {
             val savedConfig = prefs.getString(KEY_LAST_APPLIED_CONFIG, "") ?: ""
@@ -183,13 +190,14 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                     return
                 }
                 Log.i(TAG, "离开已配置应用 $effectivePkg，恢复进入前刷新率")
-                runtimeLog("离开已配置应用，恢复进入前刷新率 target=${restoreMode?.resolutionLabel}@${restoreHz}Hz")
+                runtimeLog("RESTORE start target=${restoreMode?.resolutionLabel}@${restoreHz}Hz")
                 prefs.edit().remove(KEY_LAST_APPLIED_CONFIG).apply()
                 lastAppliedConfig = ""
                 val generation = nextSwitchGeneration()
                 restoreInProgress = true
                 restoringToPackage = effectivePkg
                 switchThread = Thread {
+                    withSwitchWakeLock("restore") {
                     try {
                         val targetHz = restoreHz.takeIf { it > 0 } ?: 120
                         val currentHz = AutoOverclockManager.getCurrentRefreshRate(this)
@@ -209,12 +217,12 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                                     TAG,
                                     "restore target=${target.resolutionLabel}@${target.rateInt}Hz modeId=${target.modeId}, currentHz=$currentHz"
                                 )
-                                runtimeLog("恢复目标=${target.resolutionLabel}@${target.rateInt}Hz modeId=${target.modeId} current=${currentHz}Hz")
+                                runtimeLog("RESTORE target=${target.resolutionLabel}@${target.rateInt}Hz modeId=${target.modeId} current=${currentHz}Hz")
                                 RootUtils.switchRefreshRate(target, allModes, currentHz) {
                                     isSwitchCancelled(generation)
                                 }
                                 if (!isSwitchCancelled(generation)) {
-                                    RootUtils.setRate(target.modeId, target.rateInt)
+                                    RootUtils.setDisplayMode(target.width, target.height, target.rateInt, target.modeId - 1)
                                 }
                             } else {
                                 Log.w(TAG, "未找到恢复模式，仅设置 settings 恢复到 ${targetHz}Hz")
@@ -223,20 +231,25 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                             }
                         }
                         if (!isSwitchCancelled(generation)) {
-                            try { Thread.sleep(500) } catch (e: InterruptedException) { }
-                            val finalHz = AutoOverclockManager.getCurrentRefreshRate(this)
-                            Log.i(TAG, "恢复完成 target=${restoreTargetHz}Hz current=${finalHz}Hz")
-                            runtimeLog("恢复完成 target=${restoreTargetHz}Hz current=${finalHz}Hz")
-                            clearRestoreState(prefs)
+                            val finalHz = waitForRefreshRate(restoreTargetHz, 2500L)
+                            Log.i(TAG, "恢复校验 target=${restoreTargetHz}Hz current=${finalHz}Hz")
+                            runtimeLog("VERIFY restore target=${restoreTargetHz}Hz current=${finalHz}Hz")
+                            if (isRefreshRateMatched(finalHz, restoreTargetHz)) {
+                                runtimeLog("RESTORE success target=${restoreTargetHz}Hz")
+                                clearRestoreState(prefs)
+                            } else {
+                                runtimeLog("RESTORE pending target=${restoreTargetHz}Hz current=${finalHz}Hz keep retry state")
+                            }
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "恢复失败: ${e.message}")
-                        runtimeLog("恢复失败: ${e.message}")
+                        runtimeLog("RESTORE failed=${e.message}")
                     } finally {
                         if (!isSwitchCancelled(generation)) {
                             restoreInProgress = false
                             restoringToPackage = ""
                         }
+                    }
                     }
                 }.apply { start() }
             }
@@ -260,19 +273,20 @@ class KeepAliveAccessibilityService : AccessibilityService() {
             restoreHz = restoreMode?.rateInt ?: AutoOverclockManager.getCurrentRefreshRate(this)
             saveRestoreState(prefs, restoreMode, restoreHz)
             Log.i(TAG, "记录进入前刷新率: ${restoreMode?.resolutionLabel ?: "?"} @ ${restoreHz}Hz")
-            runtimeLog("记录进入前刷新率: ${restoreMode?.resolutionLabel ?: "?"} @ ${restoreHz}Hz")
+            runtimeLog("RESTORE save ${restoreMode?.resolutionLabel ?: "?"}@${restoreHz}Hz")
         }
 
-        currentFgPackage = basePkg
         lastAppliedConfig = configKey
         prefs.edit().putString(KEY_LAST_APPLIED_CONFIG, configKey).apply()
         Log.i(TAG, "自定义刷新率切换: $effectivePkg → $res @ ${hz}Hz")
-        runtimeLog("自定义刷新率切换: $effectivePkg -> $res @ ${hz}Hz")
+        runtimeLog("APPLY pkg=$effectivePkg target=$res@${hz}Hz")
         val generation = nextSwitchGeneration()
         restoreInProgress = false
         restoringToPackage = ""
         switchThread = Thread {
-            applyDisplayTarget(res, hz, configKey, generation)
+            withSwitchWakeLock("apply") {
+                applyDisplayTarget(res, hz, configKey, generation)
+            }
         }.apply { start() }
     }
 
@@ -314,7 +328,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
             }
             lastAppliedConfig = prefs.getString(KEY_LAST_APPLIED_CONFIG, "") ?: ""
             Log.i(TAG, "恢复持久化状态: lastApplied=$lastAppliedConfig restore=${restoreMode?.resolutionLabel}@${restoreHz}Hz")
-            runtimeLog("恢复持久化状态: lastApplied=$lastAppliedConfig restore=${restoreMode?.resolutionLabel}@${restoreHz}Hz")
+            runtimeLog("RESTORE persisted last=$lastAppliedConfig target=${restoreMode?.resolutionLabel}@${restoreHz}Hz")
         }
     }
 
@@ -392,18 +406,50 @@ class KeepAliveAccessibilityService : AccessibilityService() {
             val currentHz = AutoOverclockManager.getCurrentRefreshRate(this)
             val allModes = modes
             Log.i(TAG, "开始切换: currentHz=$currentHz → targetHz=${target.rateInt}, modeId=${target.modeId}")
-            runtimeLog("开始切换: current=${currentHz}Hz -> target=${target.rateInt}Hz modeId=${target.modeId}")
+            runtimeLog("SWITCH start current=${currentHz}Hz target=${target.rateInt}Hz modeId=${target.modeId}")
             RootUtils.switchRefreshRate(target, allModes, currentHz) {
                 isSwitchCancelled(generation) || lastAppliedConfig != configKey
             }
             if (!isSwitchCancelled(generation) && lastAppliedConfig == configKey) {
-                Log.d(TAG, "应用刷新率已切换: $res @ ${hz}Hz (modeId=${target.modeId})")
-                runtimeLog("应用刷新率已切换: $res @ ${hz}Hz modeId=${target.modeId}")
+                RootUtils.setDisplayMode(target.width, target.height, target.rateInt, target.modeId - 1)
+                val finalHz = waitForRefreshRate(target.rateInt, 2500L)
+                Log.d(TAG, "应用刷新率已切换: $res @ ${hz}Hz (modeId=${target.modeId}) current=${finalHz}Hz")
+                runtimeLog("VERIFY apply target=${target.rateInt}Hz current=${finalHz}Hz")
             }
         } catch (e: Exception) {
             Log.e(TAG, "应用刷新率切换失败: ${e.message}")
-            runtimeLog("应用刷新率切换失败: ${e.message}")
+            runtimeLog("SWITCH failed=${e.message}")
         }
+    }
+
+    private fun withSwitchWakeLock(reason: String, block: () -> Unit) {
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        val lock = wakeLock ?: pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:refresh-$reason").also {
+            it.setReferenceCounted(false)
+            wakeLock = it
+        }
+        try {
+            if (!lock.isHeld) lock.acquire(30_000L)
+            runtimeLog("WAKE acquire reason=$reason")
+            block()
+        } finally {
+            if (lock.isHeld) lock.release()
+            runtimeLog("WAKE release reason=$reason")
+        }
+    }
+
+    private fun waitForRefreshRate(targetHz: Int, timeoutMs: Long): Int {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        var current = AutoOverclockManager.getCurrentRefreshRate(this)
+        while (!isRefreshRateMatched(current, targetHz) && System.currentTimeMillis() < deadline) {
+            try { Thread.sleep(250) } catch (e: InterruptedException) { break }
+            current = AutoOverclockManager.getCurrentRefreshRate(this)
+        }
+        return current
+    }
+
+    private fun isRefreshRateMatched(currentHz: Int, targetHz: Int): Boolean {
+        return currentHz > 0 && kotlin.math.abs(currentHz - targetHz) <= 1
     }
 
     private fun runtimeLog(message: String) {
@@ -506,8 +552,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                 .setOnlyAlertOnce(true)
                 .build()
 
-            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            nm.notify(CUSTOM_NOTIF_ID, n)
+            startOrUpdateForeground(n)
         } catch (e: Exception) {
             Log.e(TAG, "postCustomNotification: ${e.message}")
         }
@@ -538,9 +583,48 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                 .setOnlyAlertOnce(true)
                 .build()
 
-            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            nm.notify(CUSTOM_NOTIF_ID, n)
+            startOrUpdateForeground(n)
         } catch (e: Exception) {
+        }
+    }
+
+    private fun ensureForeground(title: String, content: String) {
+        val openIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val flag = if (Build.VERSION.SDK_INT >= 31) {
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        } else PendingIntent.FLAG_UPDATE_CURRENT
+        val openPi = PendingIntent.getActivity(this, 3, openIntent, flag)
+        val n = NotificationCompat.Builder(this, CUSTOM_CHANNEL_ID)
+            .setContentTitle(title)
+            .setContentText(content)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentIntent(openPi)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .build()
+        startOrUpdateForeground(n)
+    }
+
+    private fun startOrUpdateForeground(notification: android.app.Notification) {
+        try {
+            if (!foregroundStarted) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    startForeground(CUSTOM_NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                } else {
+                    startForeground(CUSTOM_NOTIF_ID, notification)
+                }
+                foregroundStarted = true
+                runtimeLog("SERVICE foreground started")
+            } else {
+                val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                nm.notify(CUSTOM_NOTIF_ID, notification)
+            }
+        } catch (e: Exception) {
+            runtimeLog("SERVICE foreground failed=${e.message}")
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.notify(CUSTOM_NOTIF_ID, notification)
         }
     }
 
@@ -550,6 +634,10 @@ class KeepAliveAccessibilityService : AccessibilityService() {
             lastAppliedConfig = ""
             servicePrefs?.edit()?.remove(KEY_LAST_APPLIED_CONFIG)?.apply()
             clearRestoreState(servicePrefs)
+            if (foregroundStarted) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                foregroundStarted = false
+            }
             val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             nm.cancel(CUSTOM_NOTIF_ID)
         } catch (e: Exception) {

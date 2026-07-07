@@ -33,13 +33,17 @@ object RootUtils {
             stdin.writeBytes("$script\nexit\n")
             stdin.flush()
             val exitCode = process.waitFor()
+            val err = BufferedReader(InputStreamReader(process.errorStream)).readText().trim()
             if (exitCode != 0) {
-                val err = BufferedReader(InputStreamReader(process.errorStream)).readText().trim()
                 Log.e(TAG, "execRoot FAILED: exitCode=$exitCode, err=$err, script=${script.take(200)}")
+                RuntimeLog.appendGlobal(TAG, "ROOT failed exit=$exitCode err=${err.ifBlank { "none" }} script=${script.lineSequence().firstOrNull().orEmpty()}")
+            } else {
+                RuntimeLog.appendGlobal(TAG, "ROOT ok script=${script.lineSequence().firstOrNull().orEmpty()}")
             }
             exitCode == 0
         } catch (e: Exception) {
             Log.e(TAG, "execRoot failed: ${e.message}")
+            RuntimeLog.appendGlobal(TAG, "ROOT exception=${e.message}")
             false
         }
     }
@@ -54,6 +58,7 @@ object RootUtils {
             BufferedReader(InputStreamReader(process.inputStream)).readText().trim()
         } catch (e: Exception) {
             Log.e(TAG, "execRootForOutput failed: ${e.message}")
+            RuntimeLog.appendGlobal(TAG, "ROOT output exception=${e.message}")
             ""
         }
     }
@@ -97,6 +102,7 @@ object RootUtils {
     }
 
     fun setDisplayMode(width: Int, height: Int, hz: Int, sfIndex: Int): Boolean {
+        RuntimeLog.appendGlobal(TAG, "SWITCH setDisplayMode ${width}x$height@${hz}Hz sfIndex=$sfIndex")
         val script = buildString {
             if (width > 0 && height > 0 && hz > 0) {
                 appendLine("cmd display set-user-preferred-display-mode $width $height $hz 2>/dev/null")
@@ -177,8 +183,8 @@ object RootUtils {
         for (step in steps) {
             if (isCancelled()) return
             Log.d(TAG, "stepping down to ${step.rateInt}Hz (modeId=${step.modeId})")
-            setRate(step.modeId, step.rateInt)
-            try { Thread.sleep(500) } catch (e: InterruptedException) { break }
+            setDisplayMode(step.width, step.height, step.rateInt, step.modeId - 1)
+            try { Thread.sleep(800) } catch (e: InterruptedException) { break }
         }
     }
 
