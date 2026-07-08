@@ -43,6 +43,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
     private var lastAppliedConfig: String = ""
     private var lastRealPkg: String = ""
     private var pendingApplyRunnable: Runnable? = null
+    private var pollingRunnable: Runnable? = null
     private var cachedModes: List<DisplayMode> = emptyList()
     private var restoreMode: DisplayMode? = null
     private var restoreHz: Int = -1
@@ -60,7 +61,9 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                 } else {
                     updatePersistentNotification(lastRealPkg)
                 }
+                startForegroundPolling()
             } else {
+                stopForegroundPolling()
                 cancelCustomNotification()
             }
         }
@@ -80,6 +83,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
 
         if (servicePrefs?.getBoolean("custom_app_refresh", false) == true) {
             ensureForeground("等待应用切换", "后台自动升降档运行中")
+            startForegroundPolling()
         }
 
         Thread {
@@ -144,6 +148,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         super.onDestroy()
         Log.d(TAG, "无障碍服务销毁")
         servicePrefs?.unregisterOnSharedPreferenceChangeListener(prefListener)
+        stopForegroundPolling()
     }
 
     private fun applyForPackage(basePkg: String) {
@@ -299,7 +304,51 @@ class KeepAliveAccessibilityService : AccessibilityService() {
     private fun isSwitchCancelled(generation: Long): Boolean = generation != switchGeneration
 
     private fun isTransientForeground(pkg: String): Boolean {
-        return pkg == "android" || pkg == "com.android.systemui"
+        return pkg == "android" || pkg == "com.android.systemui" || pkg == packageName
+    }
+
+    private fun startForegroundPolling() {
+        if (pollingRunnable != null) return
+        val runnable = object : Runnable {
+            override fun run() {
+                try {
+                    val prefs = servicePrefs ?: getSharedPreferences("s", Context.MODE_PRIVATE)
+                    if (prefs.getBoolean("custom_app_refresh", false)) {
+                        val pkg = getFocusedPackageFromWindows() ?: RootUtils.getTopPackageFromWindow()
+                        if (!pkg.isNullOrEmpty()) {
+                            scheduleForegroundApply(pkg)
+                        }
+                        fgHandler?.postDelayed(this, 1000L)
+                    } else {
+                        pollingRunnable = null
+                    }
+                } catch (e: Exception) {
+                    runtimeLog("POLL failed=${e.message}")
+                    fgHandler?.postDelayed(this, 2000L)
+                }
+            }
+        }
+        pollingRunnable = runnable
+        fgHandler?.post(runnable)
+        runtimeLog("POLL started")
+    }
+
+    private fun stopForegroundPolling() {
+        pollingRunnable?.let { fgHandler?.removeCallbacks(it) }
+        pollingRunnable = null
+        runtimeLog("POLL stopped")
+    }
+
+    private fun getFocusedPackageFromWindows(): String? {
+        return try {
+            val focused = windows?.firstOrNull { it != null && it.isFocused && it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+            val root = focused?.root ?: return null
+            val pkg = root.packageName?.toString()
+            root.recycle()
+            pkg
+        } catch (e: Exception) {
+            null
+        }
     }
 
     private fun saveRestoreState(prefs: SharedPreferences, mode: DisplayMode?, hz: Int) {

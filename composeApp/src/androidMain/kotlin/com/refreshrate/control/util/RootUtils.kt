@@ -156,6 +156,19 @@ object RootUtils {
             .take(1200)
     }
 
+    fun getTopPackageFromWindow(): String? {
+        val output = execRootForOutput(
+            "dumpsys window 2>/dev/null | grep -E 'mCurrentFocus|mFocusedApp' | head -n 3"
+        )
+        if (output.isBlank()) return null
+        val packagePattern = Regex("([a-zA-Z0-9_]+\\.)+[a-zA-Z0-9_]+")
+        return packagePattern.findAll(output)
+            .map { it.value }
+            .firstOrNull { pkg ->
+                pkg != "com.android.systemui" && pkg != "android" && !pkg.startsWith("com.android.server")
+            }
+    }
+
     fun clearDisplayMode(): Boolean {
         return execRoot("cmd display clear-user-preferred-display-mode 2>/dev/null")
     }
