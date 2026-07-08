@@ -162,7 +162,6 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                 "忽略瞬态前台窗口 base=$basePkg lastApplied=$lastAppliedConfig " +
                     "restore=${restoreMode?.resolutionLabel}@${restoreHz}Hz"
             )
-            runtimeLog("忽略瞬态前台窗口 base=$basePkg lastApplied=$lastAppliedConfig restore=${restoreMode?.resolutionLabel}@${restoreHz}Hz")
             return
         }
 
@@ -300,7 +299,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
     private fun isSwitchCancelled(generation: Long): Boolean = generation != switchGeneration
 
     private fun isTransientForeground(pkg: String): Boolean {
-        return pkg == "android" || pkg == "com.android.systemui" || pkg == packageName
+        return pkg == "android" || pkg == "com.android.systemui"
     }
 
     private fun saveRestoreState(prefs: SharedPreferences, mode: DisplayMode?, hz: Int) {
@@ -465,7 +464,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                 cancelCustomNotification()
                 return
             }
-            if (basePkg.isEmpty() || isTransientForeground(basePkg)) return
+            if (basePkg.isEmpty() || basePkg == packageName || isTransientForeground(basePkg)) return
 
             lastRealPkg = basePkg
             val effectivePkg = resolveEffectivePkg(prefs, basePkg)
