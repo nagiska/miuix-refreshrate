@@ -119,6 +119,43 @@ object RootUtils {
         return execRoot(script.trimEnd())
     }
 
+    fun forceDisplayMode(width: Int, height: Int, hz: Int, sfIndex: Int, reason: String): Boolean {
+        RuntimeLog.appendGlobal(TAG, "FORCE start reason=$reason ${width}x$height@${hz}Hz sfIndex=$sfIndex")
+        var ok = setDisplayMode(width, height, hz, sfIndex)
+        try { Thread.sleep(350) } catch (e: InterruptedException) { return ok }
+        val script = buildString {
+            appendLine("cmd display clear-user-preferred-display-mode 2>/dev/null")
+            appendLine("cmd display set-user-preferred-display-mode $width $height $hz 2>/dev/null")
+            appendLine("settings put system peak_refresh_rate ${hz}.0")
+            appendLine("settings put system min_refresh_rate ${hz}.0")
+            appendLine("settings put system user_refresh_rate $hz")
+            appendLine("settings put secure miui_refresh_rate $hz")
+            appendLine("settings put system thermal_limit_refresh_rate $hz 2>/dev/null")
+            if (sfIndex >= 0) {
+                appendLine("service call SurfaceFlinger 1035 i32 $sfIndex")
+            }
+        }
+        ok = execRoot(script.trimEnd()) && ok
+        RuntimeLog.appendGlobal(TAG, "FORCE done reason=$reason ok=$ok snapshot=${readDisplaySnapshot()}")
+        return ok
+    }
+
+    fun readDisplaySnapshot(): String {
+        val script = """
+            echo peak=${'$'}(settings get system peak_refresh_rate 2>/dev/null)
+            echo min=${'$'}(settings get system min_refresh_rate 2>/dev/null)
+            echo user=${'$'}(settings get system user_refresh_rate 2>/dev/null)
+            echo miui=${'$'}(settings get secure miui_refresh_rate 2>/dev/null)
+            echo preferred=${'$'}(cmd display get-user-preferred-display-mode 2>/dev/null)
+            dumpsys display 2>/dev/null | grep -E 'mActiveMode|activeMode|DisplayModeRecord|mModeId|mRefreshRate' | head -n 12
+        """.trimIndent()
+        return execRootForOutput(script).lines()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .joinToString(" | ")
+            .take(1200)
+    }
+
     fun clearDisplayMode(): Boolean {
         return execRoot("cmd display clear-user-preferred-display-mode 2>/dev/null")
     }

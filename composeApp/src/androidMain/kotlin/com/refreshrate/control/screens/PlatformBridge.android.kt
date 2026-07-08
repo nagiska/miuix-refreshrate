@@ -63,8 +63,21 @@ actual fun applyDisplayMode(authMode: String, mode: DisplayMode, context: AppCon
             val currentHz = com.refreshrate.control.util.AutoOverclockManager.getCurrentRefreshRate(ctx)
             val allModes = com.refreshrate.control.util.AutoOverclockManager.getSupportedModes(ctx)
             com.refreshrate.control.util.RootUtils.switchRefreshRate(mode, allModes, currentHz)
+            com.refreshrate.control.util.RootUtils.forceDisplayMode(
+                mode.width,
+                mode.height,
+                mode.rateInt,
+                mode.modeId - 1,
+                "manual"
+            )
+            com.refreshrate.control.util.RuntimeLog.append(
+                ctx,
+                "ManualSwitch",
+                "VERIFY manual target=${mode.rateInt}Hz current=${com.refreshrate.control.util.AutoOverclockManager.getCurrentRefreshRate(ctx)}Hz snapshot=${com.refreshrate.control.util.RootUtils.readDisplaySnapshot()}"
+            )
         } catch (e: Exception) {
             android.util.Log.e("PlatformBridge", "applyDisplayMode failed: ${e.message}")
+            com.refreshrate.control.util.RuntimeLog.append(context.context, "ManualSwitch", "failed=${e.message}")
         }
     }.start()
 }

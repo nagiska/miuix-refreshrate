@@ -222,7 +222,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                                     isSwitchCancelled(generation)
                                 }
                                 if (!isSwitchCancelled(generation)) {
-                                    RootUtils.setDisplayMode(target.width, target.height, target.rateInt, target.modeId - 1)
+                                    RootUtils.forceDisplayMode(target.width, target.height, target.rateInt, target.modeId - 1, "restore")
                                 }
                             } else {
                                 Log.w(TAG, "未找到恢复模式，仅设置 settings 恢复到 ${targetHz}Hz")
@@ -234,6 +234,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                             val finalHz = waitForRefreshRate(restoreTargetHz, 2500L)
                             Log.i(TAG, "恢复校验 target=${restoreTargetHz}Hz current=${finalHz}Hz")
                             runtimeLog("VERIFY restore target=${restoreTargetHz}Hz current=${finalHz}Hz")
+                            runtimeLog("SNAPSHOT restore ${RootUtils.readDisplaySnapshot()}")
                             if (isRefreshRateMatched(finalHz, restoreTargetHz)) {
                                 runtimeLog("RESTORE success target=${restoreTargetHz}Hz")
                                 clearRestoreState(prefs)
@@ -411,10 +412,11 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                 isSwitchCancelled(generation) || lastAppliedConfig != configKey
             }
             if (!isSwitchCancelled(generation) && lastAppliedConfig == configKey) {
-                RootUtils.setDisplayMode(target.width, target.height, target.rateInt, target.modeId - 1)
+                RootUtils.forceDisplayMode(target.width, target.height, target.rateInt, target.modeId - 1, "apply")
                 val finalHz = waitForRefreshRate(target.rateInt, 2500L)
                 Log.d(TAG, "应用刷新率已切换: $res @ ${hz}Hz (modeId=${target.modeId}) current=${finalHz}Hz")
                 runtimeLog("VERIFY apply target=${target.rateInt}Hz current=${finalHz}Hz")
+                runtimeLog("SNAPSHOT apply ${RootUtils.readDisplaySnapshot()}")
             }
         } catch (e: Exception) {
             Log.e(TAG, "应用刷新率切换失败: ${e.message}")
