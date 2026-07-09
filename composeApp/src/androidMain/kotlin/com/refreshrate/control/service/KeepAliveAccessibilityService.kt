@@ -304,7 +304,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
     private fun isSwitchCancelled(generation: Long): Boolean = generation != switchGeneration
 
     private fun isTransientForeground(pkg: String): Boolean {
-        return pkg == "android" || pkg == "com.android.systemui"
+        return pkg == "android" || pkg == "com.android.systemui" || pkg == packageName
     }
 
     private fun startForegroundPolling() {
