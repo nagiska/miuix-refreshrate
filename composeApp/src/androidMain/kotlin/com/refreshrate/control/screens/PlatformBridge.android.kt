@@ -62,18 +62,42 @@ actual fun applyDisplayMode(authMode: String, mode: DisplayMode, context: AppCon
             val ctx = context.context
             val currentHz = com.refreshrate.control.util.AutoOverclockManager.getCurrentRefreshRate(ctx)
             val allModes = com.refreshrate.control.util.AutoOverclockManager.getSupportedModes(ctx)
-            com.refreshrate.control.util.RootUtils.switchRefreshRate(mode, allModes, currentHz)
-            com.refreshrate.control.util.RootUtils.forceDisplayMode(
-                mode.width,
-                mode.height,
-                mode.rateInt,
-                mode.modeId - 1,
-                "manual"
-            )
+            val steppedOk = com.refreshrate.control.util.RootUtils.switchRefreshRate(mode, allModes, currentHz)
             com.refreshrate.control.util.RuntimeLog.append(
                 ctx,
                 "ManualSwitch",
-                "VERIFY manual target=${mode.rateInt}Hz current=${com.refreshrate.control.util.AutoOverclockManager.getCurrentRefreshRate(ctx)}Hz snapshot=${com.refreshrate.control.util.RootUtils.readDisplaySnapshot()}"
+                "START manual target=${mode.resolutionLabel}@${mode.rateInt}Hz current=${currentHz}Hz steppedOk=$steppedOk root=${com.refreshrate.control.util.RootUtils.readDisplayState().summary()}"
+            )
+            var matched = false
+            var lastSummary = "none"
+            for (attempt in 1..3) {
+                val forceOk = com.refreshrate.control.util.RootUtils.forceDisplayMode(
+                    mode.width,
+                    mode.height,
+                    mode.rateInt,
+                    mode.modeId - 1,
+                    "manual#$attempt"
+                )
+                try { Thread.sleep(700) } catch (e: InterruptedException) { }
+                val androidHz = com.refreshrate.control.util.AutoOverclockManager.getCurrentRefreshRate(ctx)
+                val rootState = com.refreshrate.control.util.RootUtils.readDisplayState()
+                matched = if (rootState.hasRefreshEvidence()) {
+                    rootState.matchesTarget(mode.rateInt)
+                } else {
+                    kotlin.math.abs(androidHz - mode.rateInt) <= 1
+                }
+                lastSummary = "target=${mode.rateInt}Hz android=${androidHz}Hz matched=$matched root={${rootState.summary()}}"
+                com.refreshrate.control.util.RuntimeLog.append(
+                    ctx,
+                    "ManualSwitch",
+                    "VERIFY manual attempt=$attempt forceOk=$forceOk $lastSummary"
+                )
+                if (matched) break
+            }
+            com.refreshrate.control.util.RuntimeLog.append(
+                ctx,
+                "ManualSwitch",
+                "${if (matched) "SUCCESS" else "PENDING"} manual $lastSummary snapshot=${com.refreshrate.control.util.RootUtils.readDisplaySnapshot()}"
             )
         } catch (e: Exception) {
             android.util.Log.e("PlatformBridge", "applyDisplayMode failed: ${e.message}")
@@ -315,7 +339,7 @@ actual fun testRefreshRateSwitch(authMode: String): Boolean {
         }
         val mode = modes.first()
         android.util.Log.d("TestSwitch", "Testing: ${mode.width}x${mode.height} @ ${mode.rateInt}Hz, sfIndex=${mode.sfIndex}")
-        com.refreshrate.control.util.RootUtils.setDisplayMode(mode.width, mode.height, mode.rateInt, mode.sfIndex)
+        com.refreshrate.control.util.RootUtils.setDisplayMode(mode.width, mode.height, mode.rateInt, mode.modeId - 1)
     } catch (e: Exception) {
         android.util.Log.e("TestSwitch", "Test failed: ${e.message}")
         false

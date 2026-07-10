@@ -9,7 +9,7 @@ import java.util.Locale
 object RuntimeLog {
     private const val PREFS_NAME = "runtime_log"
     private const val KEY_LINES = "lines"
-    private const val MAX_LINES = 5000
+    private const val MAX_LINES = 10000
     private val timeFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
     @Volatile private var appContext: Context? = null
 

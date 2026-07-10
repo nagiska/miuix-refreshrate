@@ -60,6 +60,27 @@ object AutoOverclockManager {
     }
 
     fun getCurrentMode(context: Context): DisplayMode? {
+        try {
+            val prefs = context.getSharedPreferences("s", Context.MODE_PRIVATE)
+            val authMode = prefs.getString("auth_mode", "") ?: ""
+            if (authMode.ifEmpty { "root" } == "root") {
+                val state = RootUtils.readDisplayState()
+                if (state.activeWidth != null && state.activeHeight != null &&
+                    state.activeHz != null && state.activeModeId != null
+                ) {
+                    return DisplayMode(
+                        state.activeWidth,
+                        state.activeHeight,
+                        state.activeHz.toFloat(),
+                        state.activeModeId
+                    ).apply {
+                        sfIndex = state.activeModeId - 1
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "getCurrentMode root state fallback: ${e.message}")
+        }
         return try {
             val dm = context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
             val display = dm.getDisplay(0)
