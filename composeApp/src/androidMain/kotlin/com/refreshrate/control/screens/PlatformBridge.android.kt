@@ -16,7 +16,6 @@ import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.platform.LocalContext
 import com.refreshrate.control.model.AppInfo
 import com.refreshrate.control.model.DisplayMode
-import com.refreshrate.control.service.RefreshRateMonitorService
 import com.refreshrate.control.util.AutoOverclockManager
 import com.refreshrate.control.util.PrefsHelper
 import com.refreshrate.control.util.RootUtils
@@ -135,11 +134,6 @@ actual fun saveAuthMode(context: AppContext, mode: String) {
 
 actual fun saveCustomAppRefresh(context: AppContext, enabled: Boolean) {
     PrefsHelper.setCustomAppRefresh(context.context, enabled)
-    if (enabled) {
-        RefreshRateMonitorService.start(context.context)
-    } else {
-        RefreshRateMonitorService.stop(context.context)
-    }
 }
 
 @Composable
@@ -181,7 +175,6 @@ actual fun saveAppConfig(context: AppContext, pkg: String, enabled: Boolean, res
     // Auto-enable custom_app_refresh when any app is configured
     if (enabled) {
         PrefsHelper.setCustomAppRefresh(context.context, true)
-        RefreshRateMonitorService.start(context.context)
     }
 }
 

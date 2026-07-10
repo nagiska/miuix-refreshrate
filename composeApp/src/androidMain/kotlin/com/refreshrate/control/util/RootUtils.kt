@@ -31,14 +31,16 @@ object RootUtils {
         val activeWidth: Int?,
         val activeHeight: Int?,
         val activeHz: Int?,
+        val physicalHz: Int?,
         val raw: String
     ) {
         fun hasRefreshEvidence(): Boolean {
-            return activeHz != null || preferredHz != null || userHz != null ||
+            return physicalHz != null || activeHz != null || preferredHz != null || userHz != null ||
                 peakHz != null || minHz != null || miuiHz != null
         }
 
         fun matchesTarget(targetHz: Int): Boolean {
+            if (physicalHz != null) return hzMatches(physicalHz, targetHz)
             if (activeHz != null) return hzMatches(activeHz, targetHz)
             if (preferredHz != null) return hzMatches(preferredHz, targetHz)
             val settings = listOfNotNull(userHz, peakHz, minHz, miuiHz)
@@ -51,7 +53,7 @@ object RootUtils {
             } else {
                 "?"
             }
-            return "active=${activeHz ?: "?"}Hz res=$activeRes modeId=${activeModeId ?: "?"} " +
+            return "physical=${physicalHz ?: "?"}Hz active=${activeHz ?: "?"}Hz res=$activeRes modeId=${activeModeId ?: "?"} " +
                 "preferred=${preferredHz ?: "?"} peak=${peakHz ?: "?"} min=${minHz ?: "?"} " +
                 "user=${userHz ?: "?"} miui=${miuiHz ?: "?"}"
         }
@@ -175,6 +177,9 @@ object RootUtils {
         var ok = setDisplayMode(width, height, hz, sfIndex)
         try { Thread.sleep(350) } catch (e: InterruptedException) { return ok }
         val script = buildString {
+            if (sfIndex >= 0) {
+                appendLine("service call SurfaceFlinger 1035 i32 $sfIndex")
+            }
             appendLine("cmd display clear-user-preferred-display-mode")
             appendLine("cmd display set-user-preferred-display-mode $width $height $hz")
             appendLine("settings put system peak_refresh_rate ${hz}.0")
@@ -353,6 +358,7 @@ object RootUtils {
             activeWidth = activeRecord?.width,
             activeHeight = activeRecord?.height,
             activeHz = activeHz,
+            physicalHz = parsePhysicalHz(output),
             raw = output
         )
     }
@@ -378,6 +384,17 @@ object RootUtils {
         return Regex("""([\d.]+)\s*Hz""").find(line)?.groupValues?.get(1)?.toFloatOrNull()?.roundToInt()
     }
 
+    private fun parsePhysicalHz(output: String): Int? {
+        val periodNs = output.lineSequence()
+            .firstOrNull { it.startsWith("sfPeriodNs=") }
+            ?.substringAfter("=")
+            ?.trim()
+            ?.toLongOrNull()
+            ?: return null
+        if (periodNs !in 3_000_000L..50_000_000L) return null
+        return (1_000_000_000.0 / periodNs.toDouble()).roundToInt()
+    }
+
     private fun displayStateScript(): String {
         return """
             echo peak=${'$'}(settings get system peak_refresh_rate 2>/dev/null)
@@ -385,7 +402,9 @@ object RootUtils {
             echo user=${'$'}(settings get system user_refresh_rate 2>/dev/null)
             echo miui=${'$'}(settings get secure miui_refresh_rate 2>/dev/null)
             echo preferred=${'$'}(cmd display get-user-preferred-display-mode 2>/dev/null)
+            echo sfPeriodNs=${'$'}(dumpsys SurfaceFlinger --latency 2>/dev/null | head -n 1)
             dumpsys display 2>/dev/null | grep -E 'mActiveMode|activeMode|DisplayModeRecord|mModeId|mRefreshRate|refreshRate' | head -n 80
+            dumpsys SurfaceFlinger 2>/dev/null | grep -iE 'refresh.?rate|vsync.*period|active.*config|active.*mode' | head -n 30
         """.trimIndent()
     }
 

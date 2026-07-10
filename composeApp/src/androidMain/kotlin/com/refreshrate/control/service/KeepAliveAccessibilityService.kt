@@ -37,8 +37,6 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         private const val VERIFY_TIMEOUT_MS = 3000L
         private const val SWITCH_RETRY_COUNT = 3
         private const val POLL_HEARTBEAT_MS = 30_000L
-        @Volatile var activeInstance: KeepAliveAccessibilityService? = null
-            private set
     }
 
     private var fgHandler: Handler? = null
@@ -81,10 +79,8 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                     updatePersistentNotification(lastRealPkg)
                 }
                 startForegroundPolling()
-                startMonitorService()
             } else {
                 stopForegroundPolling()
-                stopMonitorService()
                 cancelCustomNotification()
             }
         }
@@ -93,7 +89,6 @@ class KeepAliveAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         fgHandler = Handler(Looper.getMainLooper())
-        activeInstance = this
         Log.d(TAG, "无障碍服务已连接")
         RuntimeLog.init(this)
         runtimeLog("SERVICE connected")
@@ -110,7 +105,6 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         if (servicePrefs?.getBoolean("custom_app_refresh", false) == true) {
             ensureForeground("等待应用切换", "后台自动升降档运行中")
             startForegroundPolling()
-            startMonitorService()
         }
 
         Thread {
@@ -178,7 +172,6 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         runtimeLog("SERVICE destroyed")
         servicePrefs?.unregisterOnSharedPreferenceChangeListener(prefListener)
         stopForegroundPolling()
-        if (activeInstance === this) activeInstance = null
     }
 
     private fun applyForPackage(basePkg: String) {
@@ -237,6 +230,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                         val currentHz = AutoOverclockManager.getCurrentRefreshRate(this)
                         val allModes = cachedModes.ifEmpty { AutoOverclockManager.getSupportedModes(this) }
                         var restoreTargetHz = targetHz
+                        var restoreTargetMode: DisplayMode? = null
                         var restored = false
                         var lastVerification: RefreshVerification? = null
                         runtimeLog(
@@ -265,6 +259,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                                 ?: RootUtils.findBestTargetForHz(allModes, currentMode, targetHz)
                             if (target != null) {
                                 restoreTargetHz = target.rateInt
+                                restoreTargetMode = target
                                 Log.i(
                                     TAG,
                                     "restore target=${target.resolutionLabel}@${target.rateInt}Hz modeId=${target.modeId}, currentHz=$currentHz"
@@ -317,6 +312,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                             if (restored) {
                                 runtimeLog("RESTORE success target=${restoreTargetHz}Hz ${lastVerification?.summary().orEmpty()}")
                                 clearRestoreState(prefs)
+                                restoreTargetMode?.let { scheduleRestoreWatchdog(it, generation) }
                             } else {
                                 runtimeLog(
                                     "RESTORE pending target=${restoreTargetHz}Hz last=${lastVerification?.summary() ?: "none"} " +
@@ -382,7 +378,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
     private fun isSwitchCancelled(generation: Long): Boolean = generation != switchGeneration
 
     private fun isTransientForeground(pkg: String): Boolean {
-        return pkg == "android" || pkg == "com.android.systemui"
+        return pkg == "android" || pkg == "com.android.systemui" || pkg == packageName
     }
 
     private fun startForegroundPolling() {
@@ -393,16 +389,12 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                     val prefs = servicePrefs ?: getSharedPreferences("s", Context.MODE_PRIVATE)
                     if (prefs.getBoolean("custom_app_refresh", false)) {
                         val focusedPkg = getFocusedPackageFromWindows()
-                        val rootPkg = RootUtils.getTopPackageFromWindow()
-                        val pkg = rootPkg ?: focusedPkg
+                        val rootPkg = if (focusedPkg == null) RootUtils.getTopPackageFromWindow() else null
+                        val pkg = focusedPkg ?: rootPkg
                         if (!pkg.isNullOrEmpty()) {
                             scheduleForegroundApply(pkg)
                         }
-                        logPollHeartbeat(
-                            pkg ?: "unknown",
-                            if (rootPkg != null) "rootWindow" else "a11yWindows",
-                            prefs
-                        )
+                        logPollHeartbeat(pkg ?: "unknown", if (focusedPkg != null) "a11yWindows" else "rootWindow", prefs)
                         fgHandler?.postDelayed(this, 1000L)
                     } else {
                         pollingRunnable = null
@@ -445,36 +437,6 @@ class KeepAliveAccessibilityService : AccessibilityService() {
             pkg
         } catch (e: Exception) {
             null
-        }
-    }
-
-    fun handleMonitorForegroundPackage(pkg: String) {
-        if (pkg.isNotEmpty()) scheduleForegroundApply(pkg)
-    }
-
-    fun monitorStateSummary(): String {
-        return "current=$currentFgPackage pending=$pendingFgPackage last=$lastAppliedConfig " +
-            "restore=${restoreMode?.resolutionLabel}@${restoreHz}Hz inProgress=$restoreInProgress gen=$switchGeneration " +
-            "display=${RootUtils.readDisplayState().summary()}"
-    }
-
-    fun monitorNotificationText(topPkg: String): String {
-        return "前台: $topPkg\nlast=$lastAppliedConfig\n${RootUtils.readDisplayState().summary()}"
-    }
-
-    private fun startMonitorService() {
-        try {
-            RefreshRateMonitorService.start(this)
-        } catch (e: Exception) {
-            runtimeLog("MONITOR start failed=${e.message}")
-        }
-    }
-
-    private fun stopMonitorService() {
-        try {
-            RefreshRateMonitorService.stop(this)
-        } catch (e: Exception) {
-            runtimeLog("MONITOR stop failed=${e.message}")
         }
     }
 
@@ -667,6 +629,40 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         try { Thread.sleep(600) } catch (e: InterruptedException) { }
     }
 
+    private fun scheduleRestoreWatchdog(target: DisplayMode, generation: Long) {
+        Thread {
+            try { Thread.sleep(500) } catch (e: InterruptedException) { return@Thread }
+            withSwitchWakeLock("restore-watchdog") {
+                val delays = listOf(1500L, 3000L, 5000L)
+                for ((index, delayMs) in delays.withIndex()) {
+                    try { Thread.sleep(delayMs) } catch (e: InterruptedException) { return@withSwitchWakeLock }
+                    if (isSwitchCancelled(generation)) {
+                        runtimeLog("POST_RESTORE cancelled gen=$generation currentGen=$switchGeneration")
+                        return@withSwitchWakeLock
+                    }
+                    val before = readRefreshVerification(target.rateInt)
+                    runtimeLog("POST_RESTORE check=${index + 1} delay=${delayMs}ms ${before.summary()}")
+                    if (!before.matched) {
+                        val forceOk = RootUtils.forceDisplayMode(
+                            target.width,
+                            target.height,
+                            target.rateInt,
+                            target.modeId - 1,
+                            "postRestore#${index + 1}"
+                        )
+                        val after = waitForRefreshRate(
+                            target.rateInt,
+                            VERIFY_TIMEOUT_MS,
+                            "postRestore#${index + 1}",
+                            generation
+                        )
+                        runtimeLog("POST_RESTORE reapplied=${index + 1} forceOk=$forceOk ${after.summary()}")
+                    }
+                }
+            }
+        }.start()
+    }
+
     private fun isRefreshRateMatched(currentHz: Int, targetHz: Int): Boolean {
         return currentHz > 0 && kotlin.math.abs(currentHz - targetHz) <= 1
     }
@@ -853,7 +849,6 @@ class KeepAliveAccessibilityService : AccessibilityService() {
             lastAppliedConfig = ""
             servicePrefs?.edit()?.remove(KEY_LAST_APPLIED_CONFIG)?.apply()
             clearRestoreState(servicePrefs)
-            stopMonitorService()
             if (foregroundStarted) {
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 foregroundStarted = false
