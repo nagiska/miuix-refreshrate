@@ -40,6 +40,11 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
+        <service
+            android:name=".service.RefreshRateMonitorService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <receiver android:name=".service.CustomRefreshActionReceiver" android:exported="false" />
     </application>
 </manifest>

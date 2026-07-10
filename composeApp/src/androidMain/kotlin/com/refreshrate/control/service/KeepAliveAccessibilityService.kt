@@ -37,6 +37,8 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         private const val VERIFY_TIMEOUT_MS = 3000L
         private const val SWITCH_RETRY_COUNT = 3
         private const val POLL_HEARTBEAT_MS = 30_000L
+        @Volatile var activeInstance: KeepAliveAccessibilityService? = null
+            private set
     }
 
     private var fgHandler: Handler? = null
@@ -79,8 +81,10 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                     updatePersistentNotification(lastRealPkg)
                 }
                 startForegroundPolling()
+                startMonitorService()
             } else {
                 stopForegroundPolling()
+                stopMonitorService()
                 cancelCustomNotification()
             }
         }
@@ -89,6 +93,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         fgHandler = Handler(Looper.getMainLooper())
+        activeInstance = this
         Log.d(TAG, "无障碍服务已连接")
         RuntimeLog.init(this)
         runtimeLog("SERVICE connected")
@@ -105,6 +110,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         if (servicePrefs?.getBoolean("custom_app_refresh", false) == true) {
             ensureForeground("等待应用切换", "后台自动升降档运行中")
             startForegroundPolling()
+            startMonitorService()
         }
 
         Thread {
@@ -172,6 +178,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         runtimeLog("SERVICE destroyed")
         servicePrefs?.unregisterOnSharedPreferenceChangeListener(prefListener)
         stopForegroundPolling()
+        if (activeInstance === this) activeInstance = null
     }
 
     private fun applyForPackage(basePkg: String) {
@@ -375,7 +382,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
     private fun isSwitchCancelled(generation: Long): Boolean = generation != switchGeneration
 
     private fun isTransientForeground(pkg: String): Boolean {
-        return pkg == "android" || pkg == "com.android.systemui" || pkg == packageName
+        return pkg == "android" || pkg == "com.android.systemui"
     }
 
     private fun startForegroundPolling() {
@@ -386,12 +393,16 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                     val prefs = servicePrefs ?: getSharedPreferences("s", Context.MODE_PRIVATE)
                     if (prefs.getBoolean("custom_app_refresh", false)) {
                         val focusedPkg = getFocusedPackageFromWindows()
-                        val rootPkg = if (focusedPkg == null) RootUtils.getTopPackageFromWindow() else null
-                        val pkg = focusedPkg ?: rootPkg
+                        val rootPkg = RootUtils.getTopPackageFromWindow()
+                        val pkg = rootPkg ?: focusedPkg
                         if (!pkg.isNullOrEmpty()) {
                             scheduleForegroundApply(pkg)
                         }
-                        logPollHeartbeat(pkg ?: "unknown", if (focusedPkg != null) "a11yWindows" else "rootWindow", prefs)
+                        logPollHeartbeat(
+                            pkg ?: "unknown",
+                            if (rootPkg != null) "rootWindow" else "a11yWindows",
+                            prefs
+                        )
                         fgHandler?.postDelayed(this, 1000L)
                     } else {
                         pollingRunnable = null
@@ -434,6 +445,36 @@ class KeepAliveAccessibilityService : AccessibilityService() {
             pkg
         } catch (e: Exception) {
             null
+        }
+    }
+
+    fun handleMonitorForegroundPackage(pkg: String) {
+        if (pkg.isNotEmpty()) scheduleForegroundApply(pkg)
+    }
+
+    fun monitorStateSummary(): String {
+        return "current=$currentFgPackage pending=$pendingFgPackage last=$lastAppliedConfig " +
+            "restore=${restoreMode?.resolutionLabel}@${restoreHz}Hz inProgress=$restoreInProgress gen=$switchGeneration " +
+            "display=${RootUtils.readDisplayState().summary()}"
+    }
+
+    fun monitorNotificationText(topPkg: String): String {
+        return "前台: $topPkg\nlast=$lastAppliedConfig\n${RootUtils.readDisplayState().summary()}"
+    }
+
+    private fun startMonitorService() {
+        try {
+            RefreshRateMonitorService.start(this)
+        } catch (e: Exception) {
+            runtimeLog("MONITOR start failed=${e.message}")
+        }
+    }
+
+    private fun stopMonitorService() {
+        try {
+            RefreshRateMonitorService.stop(this)
+        } catch (e: Exception) {
+            runtimeLog("MONITOR stop failed=${e.message}")
         }
     }
 
@@ -812,6 +853,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
             lastAppliedConfig = ""
             servicePrefs?.edit()?.remove(KEY_LAST_APPLIED_CONFIG)?.apply()
             clearRestoreState(servicePrefs)
+            stopMonitorService()
             if (foregroundStarted) {
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 foregroundStarted = false

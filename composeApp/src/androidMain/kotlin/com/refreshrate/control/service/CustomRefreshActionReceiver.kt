@@ -10,7 +10,9 @@ class CustomRefreshActionReceiver : BroadcastReceiver() {
         if (intent == null || "STOP_CUSTOM_REFRESH" != intent.action) return
         val prefs = context.getSharedPreferences("s", Context.MODE_PRIVATE)
         prefs.edit().putBoolean("custom_app_refresh", false).apply()
+        RefreshRateMonitorService.stop(context)
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.cancel(1002)
+        nm.cancel(1003)
     }
 }
