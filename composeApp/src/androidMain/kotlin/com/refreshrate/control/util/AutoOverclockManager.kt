@@ -65,16 +65,18 @@ object AutoOverclockManager {
             val authMode = prefs.getString("auth_mode", "") ?: ""
             if (authMode.ifEmpty { "root" } == "root") {
                 val state = RootUtils.readDisplayState()
-                if (state.activeWidth != null && state.activeHeight != null &&
-                    state.activeHz != null && state.activeModeId != null
-                ) {
+                val actualHz = state.panelHz ?: state.physicalHz ?: state.activeHz
+                if (actualHz != null) {
+                    val dm = context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+                    val androidMode = dm.getDisplay(0).mode
+                    val modeId = state.activeModeId ?: androidMode.modeId
                     return DisplayMode(
-                        state.activeWidth,
-                        state.activeHeight,
-                        state.activeHz.toFloat(),
-                        state.activeModeId
+                        state.activeWidth ?: androidMode.physicalWidth,
+                        state.activeHeight ?: androidMode.physicalHeight,
+                        actualHz.toFloat(),
+                        modeId
                     ).apply {
-                        sfIndex = state.activeModeId - 1
+                        sfIndex = modeId - 1
                     }
                 }
             }

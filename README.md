@@ -64,7 +64,7 @@
 - Root 命令退出状态和错误信息
 - Android API 报告的刷新率
 - `dumpsys display` 活动模式
-- SurfaceFlinger 帧周期推算的实际刷新率
+- 面板 sysfs 节点和 SurfaceFlinger 帧周期推算的刷新率
 - 恢复后的 `POST_RESTORE` 延迟复检结果
 
 反馈自动切换问题时，建议先清空旧日志，然后完整执行一次以下流程：
@@ -78,6 +78,7 @@
 
 重点日志字段：
 
+- `panel`：设备显示驱动节点报告的面板刷新率（设备支持时）
 - `physical`：根据 SurfaceFlinger 帧周期推算的刷新率
 - `active`：系统显示服务报告的活动模式刷新率
 - `preferred`：用户首选显示模式刷新率

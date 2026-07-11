@@ -32,14 +32,16 @@ object RootUtils {
         val activeHeight: Int?,
         val activeHz: Int?,
         val physicalHz: Int?,
+        val panelHz: Int?,
         val raw: String
     ) {
         fun hasRefreshEvidence(): Boolean {
-            return physicalHz != null || activeHz != null || preferredHz != null || userHz != null ||
+            return panelHz != null || physicalHz != null || activeHz != null || preferredHz != null || userHz != null ||
                 peakHz != null || minHz != null || miuiHz != null
         }
 
         fun matchesTarget(targetHz: Int): Boolean {
+            if (panelHz != null) return hzMatches(panelHz, targetHz)
             if (physicalHz != null) return hzMatches(physicalHz, targetHz)
             if (activeHz != null) return hzMatches(activeHz, targetHz)
             if (preferredHz != null) return hzMatches(preferredHz, targetHz)
@@ -53,7 +55,8 @@ object RootUtils {
             } else {
                 "?"
             }
-            return "physical=${physicalHz ?: "?"}Hz active=${activeHz ?: "?"}Hz res=$activeRes modeId=${activeModeId ?: "?"} " +
+            return "panel=${panelHz ?: "?"}Hz physical=${physicalHz ?: "?"}Hz active=${activeHz ?: "?"}Hz " +
+                "res=$activeRes modeId=${activeModeId ?: "?"} " +
                 "preferred=${preferredHz ?: "?"} peak=${peakHz ?: "?"} min=${minHz ?: "?"} " +
                 "user=${userHz ?: "?"} miui=${miuiHz ?: "?"}"
         }
@@ -307,6 +310,34 @@ object RootUtils {
             RuntimeLog.appendGlobal(TAG, "STEP down set=${step.rateInt}Hz modeId=${step.modeId} ok=$stepOk state=${readDisplayState().summary()}")
             try { Thread.sleep(800) } catch (e: InterruptedException) { break }
         }
+
+        val resetMode = resFilter
+            .filter { it.rateInt < targetHz && it.rateInt <= 90 }
+            .maxByOrNull { it.rateInt }
+        if (!isCancelled() && targetMode != null && resetMode != null) {
+            RuntimeLog.appendGlobal(
+                TAG,
+                "STEP down resetPulse low=${resetMode.rateInt}Hz target=${targetMode.rateInt}Hz"
+            )
+            val lowOk = setDisplayMode(
+                resetMode.width,
+                resetMode.height,
+                resetMode.rateInt,
+                resetMode.modeId - 1
+            )
+            try { Thread.sleep(700) } catch (e: InterruptedException) { return false }
+            val targetOk = setDisplayMode(
+                targetMode.width,
+                targetMode.height,
+                targetMode.rateInt,
+                targetMode.modeId - 1
+            )
+            ok = lowOk && targetOk && ok
+            RuntimeLog.appendGlobal(
+                TAG,
+                "STEP down resetPulse done lowOk=$lowOk targetOk=$targetOk state=${readDisplayState().summary()}"
+            )
+        }
         return ok
     }
 
@@ -359,6 +390,7 @@ object RootUtils {
             activeHeight = activeRecord?.height,
             activeHz = activeHz,
             physicalHz = parsePhysicalHz(output),
+            panelHz = parsePanelHz(output),
             raw = output
         )
     }
@@ -395,6 +427,17 @@ object RootUtils {
         return (1_000_000_000.0 / periodNs.toDouble()).roundToInt()
     }
 
+    private fun parsePanelHz(output: String): Int? {
+        val line = output.lineSequence().firstOrNull { it.startsWith("panelNode=") } ?: return null
+        val values = NUMBER_PATTERN.findAll(line.substringAfter(":"))
+            .mapNotNull { it.value.toFloatOrNull() }
+            .toList()
+        val direct = values.firstOrNull { it in 30f..300f }
+        if (direct != null) return direct.roundToInt()
+        val scaled = values.firstOrNull { it in 3000f..30000f }
+        return scaled?.div(100f)?.roundToInt()
+    }
+
     private fun displayStateScript(): String {
         return """
             echo peak=${'$'}(settings get system peak_refresh_rate 2>/dev/null)
@@ -403,6 +446,9 @@ object RootUtils {
             echo miui=${'$'}(settings get secure miui_refresh_rate 2>/dev/null)
             echo preferred=${'$'}(cmd display get-user-preferred-display-mode 2>/dev/null)
             echo sfPeriodNs=${'$'}(dumpsys SurfaceFlinger --latency 2>/dev/null | head -n 1)
+            for f in /sys/class/drm/*/measured_fps /sys/class/drm/*/dynamic_fps /sys/class/graphics/fb*/measured_fps /sys/class/graphics/fb*/dynamic_fps; do
+                if [ -r "${'$'}f" ]; then echo panelNode=${'$'}f:${'$'}(cat "${'$'}f" 2>/dev/null | head -n 1); fi
+            done
             dumpsys display 2>/dev/null | grep -E 'mActiveMode|activeMode|DisplayModeRecord|mModeId|mRefreshRate|refreshRate' | head -n 80
             dumpsys SurfaceFlinger 2>/dev/null | grep -iE 'refresh.?rate|vsync.*period|active.*config|active.*mode' | head -n 30
         """.trimIndent()
