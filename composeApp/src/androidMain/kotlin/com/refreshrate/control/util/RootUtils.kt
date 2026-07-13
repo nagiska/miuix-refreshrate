@@ -41,7 +41,13 @@ object RootUtils {
                 peakHz != null || minHz != null || miuiHz != null
         }
 
+        fun hasHighRateContradiction(targetHz: Int): Boolean {
+            val tolerance = maxOf(6, targetHz / 20)
+            return renderedFps != null && renderedFps > targetHz + tolerance
+        }
+
         fun matchesTarget(targetHz: Int): Boolean {
+            if (hasHighRateContradiction(targetHz)) return false
             if (driverHz != null) return hzMatches(driverHz, targetHz)
             if (activeHz != null) return hzMatches(activeHz, targetHz)
             if (physicalHz != null) return hzMatches(physicalHz, targetHz)
@@ -177,43 +183,6 @@ object RootUtils {
         return execRootDetailed(script.trimEnd(), "setDisplay:${width}x$height@${hz}Hz sfIndex=$sfIndex").ok
     }
 
-    fun forceDisplayMode(
-        width: Int,
-        height: Int,
-        hz: Int,
-        sfIndex: Int,
-        reason: String,
-        isCancelled: () -> Boolean = { false }
-    ): Boolean {
-        if (isCancelled()) return false
-        RuntimeLog.appendGlobal(TAG, "FORCE start reason=$reason ${width}x$height@${hz}Hz sfIndex=$sfIndex pre=${readDisplayState().summary()}")
-        var ok = setDisplayMode(width, height, hz, sfIndex)
-        try { Thread.sleep(350) } catch (e: InterruptedException) { return ok }
-        if (isCancelled()) {
-            RuntimeLog.appendGlobal(TAG, "FORCE cancelled reason=$reason afterInitial=true")
-            return false
-        }
-        val script = buildString {
-            if (sfIndex >= 0) {
-                appendLine("service call SurfaceFlinger 1035 i32 $sfIndex")
-            }
-            appendLine("cmd display clear-user-preferred-display-mode")
-            appendLine("cmd display set-user-preferred-display-mode $width $height $hz")
-            appendLine("settings put system peak_refresh_rate ${hz}.0")
-            appendLine("settings put system min_refresh_rate ${hz}.0")
-            appendLine("settings put system user_refresh_rate $hz")
-            appendLine("settings put secure miui_refresh_rate $hz")
-            appendLine("settings put system thermal_limit_refresh_rate $hz 2>/dev/null")
-            if (sfIndex >= 0) {
-                appendLine("service call SurfaceFlinger 1035 i32 $sfIndex")
-            }
-        }
-        val result = execRootDetailed(script.trimEnd(), "force:$reason ${width}x$height@${hz}Hz sfIndex=$sfIndex")
-        ok = result.ok && ok
-        RuntimeLog.appendGlobal(TAG, "FORCE done reason=$reason ok=$ok state=${readDisplayState().summary()} snapshot=${readDisplaySnapshot()}")
-        return ok
-    }
-
     fun readDisplayState(): DisplayState {
         val output = execRootForOutput(displayStateScript(), label = "displayState")
         return parseDisplayState(output)
@@ -292,7 +261,12 @@ object RootUtils {
             RuntimeLog.appendGlobal(TAG, "STEP direct target=${targetHz}Hz modeId=${targetMode.modeId}")
         }
         if (!isCancelled()) {
-            val finalOk = setRate(targetMode.modeId, targetHz)
+            val finalOk = setDisplayMode(
+                targetMode.width,
+                targetMode.height,
+                targetHz,
+                targetMode.modeId - 1
+            )
             ok = finalOk && ok
             RuntimeLog.appendGlobal(TAG, "STEP final target=${targetHz}Hz modeId=${targetMode.modeId} ok=$finalOk")
         }
@@ -319,38 +293,10 @@ object RootUtils {
                 return false
             }
             Log.d(TAG, "stepping down to ${step.rateInt}Hz (modeId=${step.modeId})")
-            val stepOk = setDisplayMode(step.width, step.height, step.rateInt, step.modeId - 1)
+            val stepOk = setRate(step.modeId, step.rateInt)
             ok = stepOk && ok
             RuntimeLog.appendGlobal(TAG, "STEP down set=${step.rateInt}Hz modeId=${step.modeId} ok=$stepOk state=${readDisplayState().summary()}")
             try { Thread.sleep(800) } catch (e: InterruptedException) { break }
-        }
-
-        val resetMode = resFilter
-            .filter { it.rateInt < targetHz && it.rateInt <= 90 }
-            .maxByOrNull { it.rateInt }
-        if (!isCancelled() && targetMode != null && resetMode != null) {
-            RuntimeLog.appendGlobal(
-                TAG,
-                "STEP down resetPulse low=${resetMode.rateInt}Hz target=${targetMode.rateInt}Hz"
-            )
-            val lowOk = setDisplayMode(
-                resetMode.width,
-                resetMode.height,
-                resetMode.rateInt,
-                resetMode.modeId - 1
-            )
-            try { Thread.sleep(700) } catch (e: InterruptedException) { return false }
-            val targetOk = setDisplayMode(
-                targetMode.width,
-                targetMode.height,
-                targetMode.rateInt,
-                targetMode.modeId - 1
-            )
-            ok = lowOk && targetOk && ok
-            RuntimeLog.appendGlobal(
-                TAG,
-                "STEP down resetPulse done lowOk=$lowOk targetOk=$targetOk state=${readDisplayState().summary()}"
-            )
         }
         return ok
     }

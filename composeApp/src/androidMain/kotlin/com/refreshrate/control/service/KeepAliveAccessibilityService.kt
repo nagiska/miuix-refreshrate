@@ -36,6 +36,8 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         private const val KEY_RESTORE_HZ = "restore_hz"
         private const val KEY_RESTORE_MODE_ID = "restore_mode_id"
         private const val VERIFY_TIMEOUT_MS = 3000L
+        private const val VERIFY_STABLE_MS = 1500L
+        private const val VERIFY_POLL_MS = 250L
         private const val SWITCH_RETRY_COUNT = 3
         private const val POLL_HEARTBEAT_MS = 30_000L
     }
@@ -68,7 +70,8 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         val source: String
     ) {
         fun summary(): String {
-            return "target=${targetHz}Hz android=${androidHz}Hz source=$source matched=$matched root={${rootState.summary()}}"
+            return "target=${targetHz}Hz android=${androidHz}Hz source=$source matched=$matched " +
+                "contradicted=${rootState.hasHighRateContradiction(targetHz)} root={${rootState.summary()}}"
         }
     }
 
@@ -277,16 +280,15 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                                 runtimeLog("RESTORE stepped ok=$steppedOk gen=$generation state=${RootUtils.readDisplayState().summary()}")
                                 for (attempt in 1..SWITCH_RETRY_COUNT) {
                                     if (isSwitchCancelled(generation)) break
-                                    val forceOk = RootUtils.forceDisplayMode(
+                                    val reapplyOk = if (attempt == 1) steppedOk else RootUtils.setDisplayMode(
                                         target.width,
                                         target.height,
                                         target.rateInt,
-                                        target.modeId - 1,
-                                        "restore#$attempt"
+                                        target.modeId - 1
                                     )
                                     val verification = waitForRefreshRate(restoreTargetHz, VERIFY_TIMEOUT_MS, "restore#$attempt", generation)
                                     lastVerification = verification
-                                    runtimeLog("VERIFY restore attempt=$attempt forceOk=$forceOk ${verification.summary()}")
+                                    runtimeLog("VERIFY restore attempt=$attempt reapplyOk=$reapplyOk ${verification.summary()}")
                                     if (verification.matched) {
                                         restored = true
                                         break
@@ -590,10 +592,15 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                 var lastVerification: RefreshVerification? = null
                 for (attempt in 1..SWITCH_RETRY_COUNT) {
                     if (isSwitchCancelled(generation) || lastAppliedConfig != configKey) break
-                    val forceOk = RootUtils.forceDisplayMode(target.width, target.height, target.rateInt, target.modeId - 1, "apply#$attempt")
+                    val reapplyOk = if (attempt == 1) steppedOk else RootUtils.setDisplayMode(
+                        target.width,
+                        target.height,
+                        target.rateInt,
+                        target.modeId - 1
+                    )
                     val verification = waitForRefreshRate(target.rateInt, VERIFY_TIMEOUT_MS, "apply#$attempt", generation)
                     lastVerification = verification
-                    runtimeLog("VERIFY apply attempt=$attempt steppedOk=$steppedOk forceOk=$forceOk ${verification.summary()}")
+                    runtimeLog("VERIFY apply attempt=$attempt steppedOk=$steppedOk reapplyOk=$reapplyOk ${verification.summary()}")
                     if (verification.matched) {
                         applied = true
                         break
@@ -636,14 +643,36 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         reason: String,
         generation: Long
     ): RefreshVerification {
+        val startedAt = System.currentTimeMillis()
         val deadline = System.currentTimeMillis() + timeoutMs
+        var stableSince = 0L
         var verification = readRefreshVerification(targetHz)
-        while (!verification.matched && System.currentTimeMillis() < deadline && !isSwitchCancelled(generation)) {
-            try { Thread.sleep(250) } catch (e: InterruptedException) { break }
+        var sawHighContradiction = verification.rootState.hasHighRateContradiction(targetHz)
+        while (System.currentTimeMillis() < deadline && !isSwitchCancelled(generation)) {
+            val now = System.currentTimeMillis()
+            if (verification.matched) {
+                if (stableSince == 0L) stableSince = now
+                if (now - stableSince >= VERIFY_STABLE_MS) break
+            } else {
+                stableSince = 0L
+            }
+            try { Thread.sleep(VERIFY_POLL_MS) } catch (e: InterruptedException) { break }
             verification = readRefreshVerification(targetHz)
+            if (verification.rootState.hasHighRateContradiction(targetHz)) {
+                sawHighContradiction = true
+            }
         }
-        runtimeLog("VERIFY wait reason=$reason gen=$generation ${verification.summary()}")
-        return verification
+        val now = System.currentTimeMillis()
+        val stableMatched = !sawHighContradiction && verification.matched && stableSince > 0L &&
+            now - stableSince >= VERIFY_STABLE_MS
+        val source = if (sawHighContradiction) "${verification.source}+highContradiction" else "${verification.source}+stable"
+        val result = if (verification.matched == stableMatched && !sawHighContradiction) {
+            verification
+        } else {
+            verification.copy(matched = stableMatched, source = source)
+        }
+        runtimeLog("VERIFY wait reason=$reason gen=$generation elapsed=${now - startedAt}ms ${result.summary()}")
+        return result
     }
 
     private fun readRefreshVerification(targetHz: Int): RefreshVerification {
@@ -677,12 +706,11 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                     val before = readRefreshVerification(target.rateInt)
                     runtimeLog("POST_RESTORE check=${index + 1} delay=${delayMs}ms ${before.summary()}")
                     if (!before.matched) {
-                        val forceOk = RootUtils.forceDisplayMode(
+                        val reapplyOk = RootUtils.setDisplayMode(
                             target.width,
                             target.height,
                             target.rateInt,
-                            target.modeId - 1,
-                            "postRestore#${index + 1}"
+                            target.modeId - 1
                         )
                         val after = waitForRefreshRate(
                             target.rateInt,
@@ -690,7 +718,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                             "postRestore#${index + 1}",
                             generation
                         )
-                        runtimeLog("POST_RESTORE reapplied=${index + 1} forceOk=$forceOk ${after.summary()}")
+                        runtimeLog("POST_RESTORE reapplied=${index + 1} reapplyOk=$reapplyOk ${after.summary()}")
                     }
                 }
             }

@@ -88,28 +88,38 @@ actual fun applyDisplayMode(authMode: String, mode: DisplayMode, context: AppCon
                     RuntimeLog.append(ctx, "ManualSwitch", "CANCELLED gen=$generation attempt=$attempt target=${mode.rateInt}Hz")
                     return@execute
                 }
-                val forceOk = com.refreshrate.control.util.RootUtils.forceDisplayMode(
+                val reapplyOk = if (attempt == 1) steppedOk else com.refreshrate.control.util.RootUtils.setDisplayMode(
                     mode.width,
                     mode.height,
                     mode.rateInt,
-                    mode.modeId - 1,
-                    "manual#$attempt",
-                    isCancelled = { generation != manualSwitchGeneration.get() }
+                    mode.modeId - 1
                 )
-                try { Thread.sleep(700) } catch (e: InterruptedException) { }
-                if (generation != manualSwitchGeneration.get()) return@execute
-                val androidHz = com.refreshrate.control.util.AutoOverclockManager.getCurrentRefreshRate(ctx)
-                val rootState = com.refreshrate.control.util.RootUtils.readDisplayState()
-                matched = if (rootState.hasRefreshEvidence()) {
-                    rootState.matchesTarget(mode.rateInt)
-                } else {
-                    kotlin.math.abs(androidHz - mode.rateInt) <= 1
+                var androidHz = -1
+                var rootState = com.refreshrate.control.util.RootUtils.readDisplayState()
+                var consecutiveMatches = 0
+                var samples = 0
+                var contradicted = rootState.hasHighRateContradiction(mode.rateInt)
+                while (samples < 8 && consecutiveMatches < 4) {
+                    try { Thread.sleep(250) } catch (e: InterruptedException) { break }
+                    if (generation != manualSwitchGeneration.get()) return@execute
+                    androidHz = com.refreshrate.control.util.AutoOverclockManager.getCurrentRefreshRate(ctx)
+                    rootState = com.refreshrate.control.util.RootUtils.readDisplayState()
+                    contradicted = contradicted || rootState.hasHighRateContradiction(mode.rateInt)
+                    val sampleMatched = if (rootState.hasRefreshEvidence()) {
+                        rootState.matchesTarget(mode.rateInt)
+                    } else {
+                        kotlin.math.abs(androidHz - mode.rateInt) <= 1
+                    }
+                    consecutiveMatches = if (sampleMatched) consecutiveMatches + 1 else 0
+                    samples += 1
                 }
+                matched = !contradicted && consecutiveMatches >= 4
                 lastSummary = "target=${mode.rateInt}Hz android=${androidHz}Hz matched=$matched root={${rootState.summary()}}"
                 com.refreshrate.control.util.RuntimeLog.append(
                     ctx,
                     "ManualSwitch",
-                    "VERIFY manual attempt=$attempt forceOk=$forceOk $lastSummary"
+                    "VERIFY manual attempt=$attempt reapplyOk=$reapplyOk " +
+                        "samples=$samples consecutive=$consecutiveMatches contradicted=$contradicted $lastSummary"
                 )
                 if (matched) break
             }
