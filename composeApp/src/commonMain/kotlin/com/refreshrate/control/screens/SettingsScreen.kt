@@ -28,7 +28,8 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 @Composable
 fun SettingsScreen(
     modifier: Modifier = Modifier,
-    onNavigateToLogs: () -> Unit = {}
+    onNavigateToLogs: () -> Unit = {},
+    onNavigateToRefreshTest: () -> Unit = {}
 ) {
     val appContext = LocalAppContext.current
     val settingsData = loadSettingsData()
@@ -98,6 +99,11 @@ fun SettingsScreen(
                 .padding(horizontal = 12.dp)
                 .padding(bottom = 12.dp)
         ) {
+            ArrowPreference(
+                title = "实时刷新率检测",
+                summary = "通过连续帧时间检测应用实际获得的刷新率",
+                onClick = onNavigateToRefreshTest
+            )
             ArrowPreference(
                 title = "运行日志",
                 summary = "查看自动切换和恢复日志",

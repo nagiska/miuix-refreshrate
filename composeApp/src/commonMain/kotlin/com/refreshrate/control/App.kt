@@ -52,11 +52,13 @@ import com.refreshrate.control.screens.SettingsScreen
 import com.refreshrate.control.screens.AppListScreen
 import com.refreshrate.control.screens.AppConfigScreen
 import com.refreshrate.control.screens.RuntimeLogScreen
+import com.refreshrate.control.screens.RefreshRateTestScreen
 import com.refreshrate.control.theme.RefreshRateTheme
 
 sealed class SubScreen {
     data object AppList : SubScreen()
     data object RuntimeLog : SubScreen()
+    data object RefreshRateTest : SubScreen()
     data class AppConfig(val pkg: String, val label: String) : SubScreen()
 }
 
@@ -93,7 +95,8 @@ fun App() {
                         onTabChange = { currentTab = it },
                         onNavigateToAppList = { navigationStack.add(SubScreen.AppList) },
                         onNavigateToAppConfig = { pkg, label -> navigationStack.add(SubScreen.AppConfig(pkg, label)) },
-                        onNavigateToLogs = { navigationStack.add(SubScreen.RuntimeLog) }
+                        onNavigateToLogs = { navigationStack.add(SubScreen.RuntimeLog) },
+                        onNavigateToRefreshTest = { navigationStack.add(SubScreen.RefreshRateTest) }
                     )
                     is SubScreen.AppList -> AppListScreen(
                         onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
@@ -110,6 +113,9 @@ fun App() {
                     SubScreen.RuntimeLog -> RuntimeLogScreen(
                         onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
                     )
+                    SubScreen.RefreshRateTest -> RefreshRateTestScreen(
+                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
+                    )
                 }
             }
         }
@@ -122,7 +128,8 @@ private fun MainScaffold(
     onTabChange: (Int) -> Unit,
     onNavigateToAppList: () -> Unit,
     onNavigateToAppConfig: (String, String) -> Unit,
-    onNavigateToLogs: () -> Unit
+    onNavigateToLogs: () -> Unit,
+    onNavigateToRefreshTest: () -> Unit
 ) {
     val items = listOf(
         NavigationItem("首页", MiuixIcons.Refresh),
@@ -167,7 +174,8 @@ private fun MainScaffold(
                 )
                 2 -> SettingsScreen(
                     modifier = Modifier.fillMaxSize(),
-                    onNavigateToLogs = onNavigateToLogs
+                    onNavigateToLogs = onNavigateToLogs,
+                    onNavigateToRefreshTest = onNavigateToRefreshTest
                 )
             }
         }

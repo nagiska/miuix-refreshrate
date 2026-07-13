@@ -55,6 +55,8 @@ class KeepAliveAccessibilityService : AccessibilityService() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var foregroundStarted: Boolean = false
     private var lastPollHeartbeatAt: Long = 0L
+    private var lastForegroundConflict: String = ""
+    private var lastForegroundConflictAt: Long = 0L
     @Volatile private var switchGeneration: Long = 0L
     @Volatile private var restoreInProgress: Boolean = false
     private var restoringToPackage: String = ""
@@ -347,6 +349,9 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         if (configKey == lastAppliedConfig) {
             return
         }
+        if (!isConfiguredForegroundConfirmed(basePkg)) {
+            return
+        }
 
         if (restoreMode == null) {
             restoreMode = AutoOverclockManager.getCurrentMode(this)
@@ -390,12 +395,23 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                     val prefs = servicePrefs ?: getSharedPreferences("s", Context.MODE_PRIVATE)
                     if (prefs.getBoolean("custom_app_refresh", false)) {
                         val focusedPkg = getFocusedPackageFromWindows()
-                        val rootPkg = if (focusedPkg == null) RootUtils.getTopPackageFromWindow() else null
-                        val pkg = focusedPkg ?: rootPkg
+                        val focusedConfigured = focusedPkg?.let {
+                            prefs.getBoolean("app_refresh_enabled_$it", false)
+                        } == true
+                        val shouldConfirmWithRoot = focusedPkg == null || focusedConfigured ||
+                            lastAppliedConfig.isNotEmpty() || restoreMode != null || restoreHz > 0
+                        val rootPkg = if (shouldConfirmWithRoot) RootUtils.getTopPackageFromWindow() else null
+                        val pkg = if (rootPkg != null && focusedPkg != null && rootPkg != focusedPkg) {
+                            logForegroundConflict(focusedPkg, rootPkg, "poll")
+                            rootPkg
+                        } else {
+                            focusedPkg ?: rootPkg
+                        }
                         if (!pkg.isNullOrEmpty()) {
                             scheduleForegroundApply(pkg)
                         }
-                        logPollHeartbeat(pkg ?: "unknown", if (focusedPkg != null) "a11yWindows" else "rootWindow", prefs)
+                        val source = if (rootPkg != null && rootPkg != focusedPkg) "rootConfirmed" else if (focusedPkg != null) "a11yWindows" else "rootWindow"
+                        logPollHeartbeat(pkg ?: "unknown", source, prefs)
                         fgHandler?.postDelayed(this, 1000L)
                     } else {
                         pollingRunnable = null
@@ -438,6 +454,23 @@ class KeepAliveAccessibilityService : AccessibilityService() {
             pkg
         } catch (e: Exception) {
             null
+        }
+    }
+
+    private fun isConfiguredForegroundConfirmed(candidatePkg: String): Boolean {
+        val actualPkg = RootUtils.getTopPackageFromWindow() ?: return true
+        if (actualPkg == candidatePkg) return true
+        logForegroundConflict(candidatePkg, actualPkg, "apply")
+        return false
+    }
+
+    private fun logForegroundConflict(candidatePkg: String, actualPkg: String, source: String) {
+        val key = "$candidatePkg->$actualPkg:$source"
+        val now = System.currentTimeMillis()
+        if (key != lastForegroundConflict || now - lastForegroundConflictAt >= 5000L) {
+            lastForegroundConflict = key
+            lastForegroundConflictAt = now
+            runtimeLog("FG reject stale candidate=$candidatePkg actual=$actualPkg source=$source")
         }
     }
 
