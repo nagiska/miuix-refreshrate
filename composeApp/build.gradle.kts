@@ -8,6 +8,13 @@ plugins {
     alias(libs.plugins.androidApplication)
 }
 
+val buildRevision = providers.environmentVariable("GITHUB_SHA")
+    .orElse(providers.exec {
+        commandLine("git", "rev-parse", "--short=12", "HEAD")
+    }.standardOutput.asText.map { it.trim() })
+    .get()
+    .take(12)
+
 kotlin {
     androidTarget {
         @OptIn(ExperimentalKotlinGradlePluginApi::class)
@@ -47,12 +54,17 @@ android {
         targetSdk = 37
         versionCode = 1
         versionName = "1.0.0"
+        buildConfigField("String", "BUILD_REVISION", "\"$buildRevision\"")
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
         }
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     compileOptions {

@@ -20,6 +20,11 @@ import com.refreshrate.control.util.AutoOverclockManager
 import com.refreshrate.control.util.PrefsHelper
 import com.refreshrate.control.util.RootUtils
 import com.refreshrate.control.util.RuntimeLog
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.Executors
+
+private val manualSwitchGeneration = AtomicLong(0)
+private val manualSwitchExecutor = Executors.newSingleThreadExecutor()
 
 actual class AppContext(val context: Context)
 
@@ -57,28 +62,42 @@ actual fun refreshDisplayData(refreshKey: Int): DisplayData? {
 }
 
 actual fun applyDisplayMode(authMode: String, mode: DisplayMode, context: AppContext) {
-    Thread {
+    val generation = manualSwitchGeneration.incrementAndGet()
+    manualSwitchExecutor.execute {
         try {
+            if (generation != manualSwitchGeneration.get()) return@execute
             val ctx = context.context
             val currentHz = com.refreshrate.control.util.AutoOverclockManager.getCurrentRefreshRate(ctx)
             val allModes = com.refreshrate.control.util.AutoOverclockManager.getSupportedModes(ctx)
-            val steppedOk = com.refreshrate.control.util.RootUtils.switchRefreshRate(mode, allModes, currentHz)
+            val steppedOk = com.refreshrate.control.util.RootUtils.switchRefreshRate(mode, allModes, currentHz) {
+                generation != manualSwitchGeneration.get()
+            }
+            if (generation != manualSwitchGeneration.get()) {
+                RuntimeLog.append(ctx, "ManualSwitch", "CANCELLED gen=$generation target=${mode.rateInt}Hz")
+                return@execute
+            }
             com.refreshrate.control.util.RuntimeLog.append(
                 ctx,
                 "ManualSwitch",
-                "START manual target=${mode.resolutionLabel}@${mode.rateInt}Hz current=${currentHz}Hz steppedOk=$steppedOk root=${com.refreshrate.control.util.RootUtils.readDisplayState().summary()}"
+                "START gen=$generation target=${mode.resolutionLabel}@${mode.rateInt}Hz current=${currentHz}Hz steppedOk=$steppedOk root=${com.refreshrate.control.util.RootUtils.readDisplayState().summary()}"
             )
             var matched = false
             var lastSummary = "none"
             for (attempt in 1..3) {
+                if (generation != manualSwitchGeneration.get()) {
+                    RuntimeLog.append(ctx, "ManualSwitch", "CANCELLED gen=$generation attempt=$attempt target=${mode.rateInt}Hz")
+                    return@execute
+                }
                 val forceOk = com.refreshrate.control.util.RootUtils.forceDisplayMode(
                     mode.width,
                     mode.height,
                     mode.rateInt,
                     mode.modeId - 1,
-                    "manual#$attempt"
+                    "manual#$attempt",
+                    isCancelled = { generation != manualSwitchGeneration.get() }
                 )
                 try { Thread.sleep(700) } catch (e: InterruptedException) { }
+                if (generation != manualSwitchGeneration.get()) return@execute
                 val androidHz = com.refreshrate.control.util.AutoOverclockManager.getCurrentRefreshRate(ctx)
                 val rootState = com.refreshrate.control.util.RootUtils.readDisplayState()
                 matched = if (rootState.hasRefreshEvidence()) {
@@ -103,7 +122,7 @@ actual fun applyDisplayMode(authMode: String, mode: DisplayMode, context: AppCon
             android.util.Log.e("PlatformBridge", "applyDisplayMode failed: ${e.message}")
             com.refreshrate.control.util.RuntimeLog.append(context.context, "ManualSwitch", "failed=${e.message}")
         }
-    }.start()
+    }
 }
 
 @Composable

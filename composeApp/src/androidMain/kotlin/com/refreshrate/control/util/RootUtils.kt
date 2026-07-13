@@ -32,16 +32,17 @@ object RootUtils {
         val activeHeight: Int?,
         val activeHz: Int?,
         val physicalHz: Int?,
-        val panelHz: Int?,
+        val driverHz: Int?,
+        val renderedFps: Int?,
         val raw: String
     ) {
         fun hasRefreshEvidence(): Boolean {
-            return panelHz != null || physicalHz != null || activeHz != null || preferredHz != null || userHz != null ||
+            return driverHz != null || physicalHz != null || activeHz != null || preferredHz != null || userHz != null ||
                 peakHz != null || minHz != null || miuiHz != null
         }
 
         fun matchesTarget(targetHz: Int): Boolean {
-            if (panelHz != null) return hzMatches(panelHz, targetHz)
+            if (driverHz != null) return hzMatches(driverHz, targetHz)
             if (physicalHz != null) return hzMatches(physicalHz, targetHz)
             if (activeHz != null) return hzMatches(activeHz, targetHz)
             if (preferredHz != null) return hzMatches(preferredHz, targetHz)
@@ -55,7 +56,8 @@ object RootUtils {
             } else {
                 "?"
             }
-            return "panel=${panelHz ?: "?"}Hz physical=${physicalHz ?: "?"}Hz active=${activeHz ?: "?"}Hz " +
+            return "driver=${driverHz ?: "?"}Hz rendered=${renderedFps ?: "?"}fps " +
+                "physical=${physicalHz ?: "?"}Hz active=${activeHz ?: "?"}Hz " +
                 "res=$activeRes modeId=${activeModeId ?: "?"} " +
                 "preferred=${preferredHz ?: "?"} peak=${peakHz ?: "?"} min=${minHz ?: "?"} " +
                 "user=${userHz ?: "?"} miui=${miuiHz ?: "?"}"
@@ -175,10 +177,22 @@ object RootUtils {
         return execRootDetailed(script.trimEnd(), "setDisplay:${width}x$height@${hz}Hz sfIndex=$sfIndex").ok
     }
 
-    fun forceDisplayMode(width: Int, height: Int, hz: Int, sfIndex: Int, reason: String): Boolean {
+    fun forceDisplayMode(
+        width: Int,
+        height: Int,
+        hz: Int,
+        sfIndex: Int,
+        reason: String,
+        isCancelled: () -> Boolean = { false }
+    ): Boolean {
+        if (isCancelled()) return false
         RuntimeLog.appendGlobal(TAG, "FORCE start reason=$reason ${width}x$height@${hz}Hz sfIndex=$sfIndex pre=${readDisplayState().summary()}")
         var ok = setDisplayMode(width, height, hz, sfIndex)
         try { Thread.sleep(350) } catch (e: InterruptedException) { return ok }
+        if (isCancelled()) {
+            RuntimeLog.appendGlobal(TAG, "FORCE cancelled reason=$reason afterInitial=true")
+            return false
+        }
         val script = buildString {
             if (sfIndex >= 0) {
                 appendLine("service call SurfaceFlinger 1035 i32 $sfIndex")
@@ -390,7 +404,8 @@ object RootUtils {
             activeHeight = activeRecord?.height,
             activeHz = activeHz,
             physicalHz = parsePhysicalHz(output),
-            panelHz = parsePanelHz(output),
+            driverHz = parseNodeHz(output, "driverNode="),
+            renderedFps = parseNodeHz(output, "renderedNode="),
             raw = output
         )
     }
@@ -427,8 +442,8 @@ object RootUtils {
         return (1_000_000_000.0 / periodNs.toDouble()).roundToInt()
     }
 
-    private fun parsePanelHz(output: String): Int? {
-        val line = output.lineSequence().firstOrNull { it.startsWith("panelNode=") } ?: return null
+    private fun parseNodeHz(output: String, prefix: String): Int? {
+        val line = output.lineSequence().firstOrNull { it.startsWith(prefix) } ?: return null
         val values = NUMBER_PATTERN.findAll(line.substringAfter(":"))
             .mapNotNull { it.value.toFloatOrNull() }
             .toList()
@@ -446,8 +461,11 @@ object RootUtils {
             echo miui=${'$'}(settings get secure miui_refresh_rate 2>/dev/null)
             echo preferred=${'$'}(cmd display get-user-preferred-display-mode 2>/dev/null)
             echo sfPeriodNs=${'$'}(dumpsys SurfaceFlinger --latency 2>/dev/null | head -n 1)
-            for f in /sys/class/drm/*/measured_fps /sys/class/drm/*/dynamic_fps /sys/class/graphics/fb*/measured_fps /sys/class/graphics/fb*/dynamic_fps; do
-                if [ -r "${'$'}f" ]; then echo panelNode=${'$'}f:${'$'}(cat "${'$'}f" 2>/dev/null | head -n 1); fi
+            for f in /sys/class/drm/*/dynamic_fps /sys/class/drm/*/current_fps /sys/class/graphics/fb*/dynamic_fps /sys/class/graphics/fb*/current_fps; do
+                if [ -r "${'$'}f" ]; then echo driverNode=${'$'}f:${'$'}(cat "${'$'}f" 2>/dev/null | head -n 1); fi
+            done
+            for f in /sys/class/drm/*/measured_fps /sys/class/graphics/fb*/measured_fps; do
+                if [ -r "${'$'}f" ]; then echo renderedNode=${'$'}f:${'$'}(cat "${'$'}f" 2>/dev/null | head -n 1); fi
             done
             dumpsys display 2>/dev/null | grep -E 'mActiveMode|activeMode|DisplayModeRecord|mModeId|mRefreshRate|refreshRate' | head -n 80
             dumpsys SurfaceFlinger 2>/dev/null | grep -iE 'refresh.?rate|vsync.*period|active.*config|active.*mode' | head -n 30

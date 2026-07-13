@@ -18,6 +18,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import androidx.core.app.NotificationCompat
+import com.refreshrate.control.BuildConfig
 import com.refreshrate.control.MainActivity
 import com.refreshrate.control.model.DisplayMode
 import com.refreshrate.control.util.AutoOverclockManager
@@ -91,7 +92,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         fgHandler = Handler(Looper.getMainLooper())
         Log.d(TAG, "无障碍服务已连接")
         RuntimeLog.init(this)
-        runtimeLog("SERVICE connected")
+        runtimeLog("SERVICE connected version=${BuildConfig.VERSION_NAME} revision=${BuildConfig.BUILD_REVISION}")
         createCustomChannel()
         servicePrefs = getSharedPreferences("s", Context.MODE_PRIVATE)
         runtimeLog(
