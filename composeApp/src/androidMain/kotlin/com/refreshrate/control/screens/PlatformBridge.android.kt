@@ -88,12 +88,13 @@ actual fun applyDisplayMode(authMode: String, mode: DisplayMode, context: AppCon
                     RuntimeLog.append(ctx, "ManualSwitch", "CANCELLED gen=$generation attempt=$attempt target=${mode.rateInt}Hz")
                     return@execute
                 }
-                val reapplyOk = if (attempt == 1) steppedOk else com.refreshrate.control.util.RootUtils.setDisplayMode(
-                    mode.width,
-                    mode.height,
-                    mode.rateInt,
-                    mode.modeId - 1
-                )
+                val reapplyOk = if (attempt == 1) {
+                    steppedOk
+                } else {
+                    com.refreshrate.control.util.RootUtils.switchRefreshRate(mode, allModes, currentHz) {
+                        generation != manualSwitchGeneration.get()
+                    }
+                }
                 var androidHz = -1
                 var rootState = com.refreshrate.control.util.RootUtils.readDisplayState()
                 var consecutiveMatches = 0

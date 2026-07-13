@@ -165,6 +165,37 @@ object RootUtils {
         return result.ok
     }
 
+    fun setRateDown(dumpsysModeId: Int?, targetHz: Int): Boolean {
+        val sfIndex = if (dumpsysModeId != null && dumpsysModeId > 0) dumpsysModeId - 1 else null
+        Log.d(TAG, "setRateDown: modeId=$dumpsysModeId, hz=$targetHz, sfIndex=$sfIndex")
+        val script = buildString {
+            // Reverse the working upshift order so min never remains above peak.
+            appendLine("settings put system thermal_limit_refresh_rate $targetHz 2>/dev/null")
+            appendLine("settings put secure miui_refresh_rate $targetHz")
+            appendLine("settings put system user_refresh_rate $targetHz")
+            appendLine("settings put system min_refresh_rate ${targetHz}.0")
+            appendLine("settings put system peak_refresh_rate ${targetHz}.0")
+            if (sfIndex != null) {
+                appendLine("service call SurfaceFlinger 1035 i32 $sfIndex")
+            }
+        }
+        val result = execRootDetailed(
+            script.trimEnd(),
+            "setRateDown:${targetHz}Hz modeId=${dumpsysModeId ?: "none"} sfIndex=${sfIndex ?: "none"}"
+        )
+        Log.d(TAG, "setRateDown result: ${result.ok}")
+        return result.ok
+    }
+
+    fun setPreferredMode(width: Int, height: Int, hz: Int): Boolean {
+        if (width <= 0 || height <= 0 || hz <= 0) return false
+        RuntimeLog.appendGlobal(TAG, "SWITCH setPreferredMode ${width}x$height@${hz}Hz")
+        return execRootDetailed(
+            "cmd display set-user-preferred-display-mode $width $height $hz",
+            "setPreferred:${width}x$height@${hz}Hz"
+        ).ok
+    }
+
     fun setDisplayMode(width: Int, height: Int, hz: Int, sfIndex: Int): Boolean {
         RuntimeLog.appendGlobal(TAG, "SWITCH setDisplayMode ${width}x$height@${hz}Hz sfIndex=$sfIndex")
         val script = buildString {
@@ -260,7 +291,7 @@ object RootUtils {
             Log.d(TAG, "direct switch to ${targetHz}Hz (modeId=${targetMode.modeId})")
             RuntimeLog.appendGlobal(TAG, "STEP direct target=${targetHz}Hz modeId=${targetMode.modeId}")
         }
-        if (!isCancelled()) {
+        if (currentHz <= targetHz && !isCancelled()) {
             val finalOk = setDisplayMode(
                 targetMode.width,
                 targetMode.height,
@@ -282,22 +313,41 @@ object RootUtils {
         } else {
             allModes
         }
-        val steps = resFilter
+        val stepModes = if (targetMode != null) {
+            (resFilter + targetMode).distinctBy { Triple(it.width, it.height, it.rateInt) }
+        } else {
+            resFilter
+        }
+        val steps = stepModes
             .filter { it.rateInt in targetHz until currentHz }
             .sortedByDescending { it.rateInt }
         Log.d(TAG, "steppedDecrease: currentHz=$currentHz → targetHz=$targetHz, steps=${steps.map { it.rateInt }}")
         RuntimeLog.appendGlobal(TAG, "STEP down current=${currentHz}Hz target=${targetHz}Hz steps=${steps.map { it.rateInt }}")
-        for (step in steps) {
+        if (isCancelled()) return false
+        if (targetMode != null) {
+            val preferredOk = setPreferredMode(targetMode.width, targetMode.height, targetMode.rateInt)
+            ok = preferredOk && ok
+            RuntimeLog.appendGlobal(
+                TAG,
+                "STEP down preferred=${targetMode.rateInt}Hz modeId=${targetMode.modeId} " +
+                    "ok=$preferredOk state=${readDisplayState().summary()}"
+            )
+            try { Thread.sleep(800) } catch (e: InterruptedException) { return false }
+        }
+        for ((index, step) in steps.withIndex()) {
             if (isCancelled()) {
                 RuntimeLog.appendGlobal(TAG, "STEP down cancelled at=${step.rateInt}Hz target=${targetHz}Hz")
                 return false
             }
             Log.d(TAG, "stepping down to ${step.rateInt}Hz (modeId=${step.modeId})")
-            val stepOk = setRate(step.modeId, step.rateInt)
+            val stepOk = setRateDown(step.modeId, step.rateInt)
             ok = stepOk && ok
             RuntimeLog.appendGlobal(TAG, "STEP down set=${step.rateInt}Hz modeId=${step.modeId} ok=$stepOk state=${readDisplayState().summary()}")
-            try { Thread.sleep(800) } catch (e: InterruptedException) { break }
+            if (index != steps.lastIndex) {
+                try { Thread.sleep(800) } catch (e: InterruptedException) { return false }
+            }
         }
+        RuntimeLog.appendGlobal(TAG, "STEP down complete source=${currentHz}Hz target=${targetHz}Hz ok=$ok")
         return ok
     }
 
