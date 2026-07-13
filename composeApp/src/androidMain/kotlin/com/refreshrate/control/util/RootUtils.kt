@@ -43,8 +43,8 @@ object RootUtils {
 
         fun matchesTarget(targetHz: Int): Boolean {
             if (driverHz != null) return hzMatches(driverHz, targetHz)
-            if (physicalHz != null) return hzMatches(physicalHz, targetHz)
             if (activeHz != null) return hzMatches(activeHz, targetHz)
+            if (physicalHz != null) return hzMatches(physicalHz, targetHz)
             if (preferredHz != null) return hzMatches(preferredHz, targetHz)
             val settings = listOfNotNull(userHz, peakHz, minHz, miuiHz)
             return settings.isNotEmpty() && settings.all { hzMatches(it, targetHz) }
