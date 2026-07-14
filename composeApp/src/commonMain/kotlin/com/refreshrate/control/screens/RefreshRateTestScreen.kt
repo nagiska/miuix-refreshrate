@@ -93,7 +93,7 @@ fun RefreshRateTestScreen(onBack: () -> Unit) {
         topBar = {
             TopAppBar(
                 title = "实时刷新率检测",
-                color = Color.Black,
+                color = MiuixTheme.colorScheme.background,
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(MiuixIcons.Back, contentDescription = "返回")
@@ -105,7 +105,7 @@ fun RefreshRateTestScreen(onBack: () -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black)
+                .background(MiuixTheme.colorScheme.background)
                 .padding(paddingValues)
         ) {
             Column(

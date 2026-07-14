@@ -23,7 +23,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import top.yukonga.miuix.kmp.basic.Card
@@ -55,14 +54,14 @@ fun AppListScreen(
         topBar = {
             SmallTopAppBar(
                 title = "选择应用",
-                color = Color.Black
+                color = MiuixTheme.colorScheme.background
             )
         }
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black)
+                .background(MiuixTheme.colorScheme.background)
                 .padding(paddingValues)
         ) {
             Card(

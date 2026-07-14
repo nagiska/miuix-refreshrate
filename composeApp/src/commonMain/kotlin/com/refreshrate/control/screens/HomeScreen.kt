@@ -58,10 +58,10 @@ fun HomeScreen(
     val accessibilityEnabled = isAccessibilityServiceEnabled()
     val authMode = displayData?.authMode ?: ""
 
-    Column(modifier = modifier.background(Color.Black)) {
+    Column(modifier = modifier.background(MiuixTheme.colorScheme.background)) {
         SmallTopAppBar(
             title = "屏幕刷新率",
-            color = Color.Black
+            color = MiuixTheme.colorScheme.background
         )
 
         // Status indicators row

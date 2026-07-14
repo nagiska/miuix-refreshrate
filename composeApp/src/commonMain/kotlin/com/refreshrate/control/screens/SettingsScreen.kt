@@ -47,10 +47,10 @@ fun SettingsScreen(
         }
     }
 
-    Column(modifier = modifier.background(Color.Black).verticalScroll(rememberScrollState())) {
+    Column(modifier = modifier.background(MiuixTheme.colorScheme.background).verticalScroll(rememberScrollState())) {
         SmallTopAppBar(
             title = "设置",
-            color = Color.Black
+            color = MiuixTheme.colorScheme.background
         )
 
         SmallTitle("授权管理")
