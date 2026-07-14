@@ -136,7 +136,7 @@ private fun MainScaffold(
         NavigationItem("应用", MiuixIcons.VerticalSplit),
         NavigationItem("设置", MiuixIcons.Settings)
     )
-    val backgroundColor = MiuixTheme.colorScheme.background
+    val backgroundColor = MiuixTheme.colorScheme.surface
     val backdrop = rememberLayerBackdrop {
         drawRect(backgroundColor)
         drawContent()

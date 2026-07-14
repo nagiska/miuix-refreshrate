@@ -37,7 +37,7 @@ fun RuntimeLogScreen(onBack: () -> Unit) {
         topBar = {
             TopAppBar(
                 title = "运行日志",
-                color = MiuixTheme.colorScheme.background,
+                color = MiuixTheme.colorScheme.surface,
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(MiuixIcons.Back, contentDescription = "返回")
@@ -49,7 +49,7 @@ fun RuntimeLogScreen(onBack: () -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MiuixTheme.colorScheme.background)
+                .background(MiuixTheme.colorScheme.surface)
                 .padding(paddingValues)
         ) {
             Card(

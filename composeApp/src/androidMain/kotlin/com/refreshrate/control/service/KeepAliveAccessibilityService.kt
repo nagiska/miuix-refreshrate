@@ -56,7 +56,6 @@ class KeepAliveAccessibilityService : AccessibilityService() {
     private var restoreHz: Int = -1
     private var restoreSourceHz: Int = -1
     private var switchThread: Thread? = null
-    private var wakeLock: PowerManager.WakeLock? = null
     private var foregroundStarted: Boolean = false
     private var lastPollHeartbeatAt: Long = 0L
     private var lastForegroundConflict: String = ""
@@ -64,6 +63,8 @@ class KeepAliveAccessibilityService : AccessibilityService() {
     private val switchStateLock = Any()
     @Volatile private var switchGeneration: Long = 0L
     @Volatile private var restoreInProgress: Boolean = false
+    @Volatile private var restoreWatchdogActive: Boolean = false
+    @Volatile private var restoreWatchdogGeneration: Long = -1L
     private var restoringToPackage: String = ""
     private data class RefreshVerification(
         val targetHz: Int,
@@ -221,6 +222,13 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         if (!enabled) {
             val savedConfig = prefs.getString(KEY_LAST_APPLIED_CONFIG, "") ?: ""
             if (savedConfig.isNotEmpty() || lastAppliedConfig.isNotEmpty() || restoreMode != null || restoreHz > 0) {
+                if (restoreWatchdogActive) {
+                    runtimeLog(
+                        "RESTORE watchdog active target=${restoreMode?.resolutionLabel}@${restoreHz}Hz " +
+                            "base=$basePkg gen=$restoreWatchdogGeneration"
+                    )
+                    return
+                }
                 if (restoreInProgress) {
                     Log.i(TAG, "恢复中，忽略重复未配置应用事件 base=$basePkg effective=$effectivePkg gen=$switchGeneration")
                     runtimeLog("恢复中，忽略重复未配置应用事件 base=$basePkg effective=$effectivePkg gen=$switchGeneration")
@@ -330,9 +338,13 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                         if (!isSwitchCancelled(generation)) {
                             runtimeLog("SNAPSHOT restore final ${RootUtils.readDisplaySnapshot()}")
                             if (restored) {
-                                if (clearRestoreStateIfCurrent(prefs, generation)) {
+                                if (generation == switchGeneration) {
                                     runtimeLog("RESTORE success target=${restoreTargetHz}Hz ${lastVerification?.summary().orEmpty()}")
-                                    restoreTargetMode?.let { scheduleRestoreWatchdog(it, transitionSourceHz, generation) }
+                                    if (restoreTargetMode != null) {
+                                        scheduleRestoreWatchdog(restoreTargetMode, transitionSourceHz, generation)
+                                    } else {
+                                        clearRestoreStateIfCurrent(prefs, generation)
+                                    }
                                 } else {
                                     runtimeLog("RESTORE cancelled before commit gen=$generation currentGen=$switchGeneration")
                                 }
@@ -371,6 +383,14 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         }
         if (!isConfiguredForegroundConfirmed(basePkg)) {
             return
+        }
+        if (restoreWatchdogActive) {
+            runtimeLog(
+                "RESTORE watchdog handoff target=${restoreMode?.resolutionLabel}@${restoreHz}Hz " +
+                    "to=$effectivePkg gen=$restoreWatchdogGeneration"
+            )
+            restoreWatchdogActive = false
+            restoreWatchdogGeneration = -1L
         }
         val generation = nextSwitchGeneration()
 
@@ -560,6 +580,8 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         restoreHz = -1
         restoreSourceHz = -1
         restoreInProgress = false
+        restoreWatchdogActive = false
+        restoreWatchdogGeneration = -1L
         restoringToPackage = ""
         prefs?.edit()
             ?.remove(KEY_RESTORE_WIDTH)
@@ -679,12 +701,10 @@ class KeepAliveAccessibilityService : AccessibilityService() {
 
     private fun withSwitchWakeLock(reason: String, block: () -> Unit) {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-        val lock = wakeLock ?: pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:refresh-$reason").also {
-            it.setReferenceCounted(false)
-            wakeLock = it
-        }
+        val lock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:refresh-$reason")
+        lock.setReferenceCounted(false)
         try {
-            if (!lock.isHeld) lock.acquire(30_000L)
+            lock.acquire(30_000L)
             runtimeLog("WAKE acquire reason=$reason")
             block()
         } finally {
@@ -749,37 +769,59 @@ class KeepAliveAccessibilityService : AccessibilityService() {
     }
 
     private fun scheduleRestoreWatchdog(target: DisplayMode, sourceHz: Int, generation: Long) {
+        restoreWatchdogActive = true
+        restoreWatchdogGeneration = generation
         Thread {
-            try { Thread.sleep(500) } catch (e: InterruptedException) { return@Thread }
-            withSwitchWakeLock("restore-watchdog") {
-                val delays = listOf(1500L, 3000L, 5000L)
-                for ((index, delayMs) in delays.withIndex()) {
-                    try { Thread.sleep(delayMs) } catch (e: InterruptedException) { return@withSwitchWakeLock }
-                    if (isSwitchCancelled(generation)) {
-                        runtimeLog("POST_RESTORE cancelled gen=$generation currentGen=$switchGeneration")
-                        return@withSwitchWakeLock
-                    }
-                    val before = readRefreshVerification(target.rateInt)
-                    runtimeLog("POST_RESTORE check=${index + 1} delay=${delayMs}ms ${before.summary()}")
-                    if (!before.matched) {
-                        val allModes = cachedModes.ifEmpty { AutoOverclockManager.getSupportedModes(this) }
-                        val reapplyOk = if (allModes.isNotEmpty()) {
-                            RootUtils.switchRefreshRate(target, allModes, sourceHz) {
-                                isSwitchCancelled(generation)
-                            }
-                        } else if (sourceHz > target.rateInt) {
-                            RootUtils.setRateDown(null, target.rateInt)
-                        } else {
-                            RootUtils.setRate(null, target.rateInt)
+            try {
+                Thread.sleep(500)
+                withSwitchWakeLock("restore-watchdog") {
+                    val delays = listOf(1500L, 3000L, 5000L)
+                    var finalMatched = false
+                    for ((index, delayMs) in delays.withIndex()) {
+                        Thread.sleep(delayMs)
+                        if (isSwitchCancelled(generation)) {
+                            runtimeLog("POST_RESTORE cancelled gen=$generation currentGen=$switchGeneration")
+                            return@withSwitchWakeLock
                         }
-                        val after = waitForRefreshRate(
-                            target.rateInt,
-                            VERIFY_TIMEOUT_MS,
-                            "postRestore#${index + 1}",
-                            generation
-                        )
-                        runtimeLog("POST_RESTORE reapplied=${index + 1} reapplyOk=$reapplyOk ${after.summary()}")
+                        val before = readRefreshVerification(target.rateInt)
+                        runtimeLog("POST_RESTORE check=${index + 1} delay=${delayMs}ms ${before.summary()}")
+                        finalMatched = before.matched
+                        if (!before.matched) {
+                            val allModes = cachedModes.ifEmpty { AutoOverclockManager.getSupportedModes(this) }
+                            val reapplyOk = if (allModes.isNotEmpty()) {
+                                RootUtils.switchRefreshRate(target, allModes, sourceHz) {
+                                    isSwitchCancelled(generation)
+                                }
+                            } else {
+                                runtimeLog("POST_RESTORE noModes skip unsafe reapply gen=$generation")
+                                false
+                            }
+                            val after = waitForRefreshRate(
+                                target.rateInt,
+                                VERIFY_TIMEOUT_MS,
+                                "postRestore#${index + 1}",
+                                generation
+                            )
+                            runtimeLog("POST_RESTORE reapplied=${index + 1} reapplyOk=$reapplyOk ${after.summary()}")
+                            finalMatched = after.matched
+                        }
                     }
+                    if (restoreWatchdogGeneration == generation) {
+                        if (finalMatched && clearRestoreStateIfCurrent(servicePrefs, generation)) {
+                            runtimeLog("POST_RESTORE stable target=${target.rateInt}Hz cleared=true")
+                        } else {
+                            runtimeLog("POST_RESTORE pending target=${target.rateInt}Hz keep retry state")
+                        }
+                    }
+                }
+            } catch (e: InterruptedException) {
+                runtimeLog("POST_RESTORE interrupted gen=$generation currentGen=$switchGeneration")
+            } catch (e: Exception) {
+                runtimeLog("POST_RESTORE failed gen=$generation error=${e.message}")
+            } finally {
+                if (restoreWatchdogGeneration == generation) {
+                    restoreWatchdogActive = false
+                    restoreWatchdogGeneration = -1L
                 }
             }
         }.start()

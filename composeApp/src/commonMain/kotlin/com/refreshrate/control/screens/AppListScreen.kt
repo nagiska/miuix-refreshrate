@@ -54,14 +54,14 @@ fun AppListScreen(
         topBar = {
             SmallTopAppBar(
                 title = "选择应用",
-                color = MiuixTheme.colorScheme.background
+                color = MiuixTheme.colorScheme.surface
             )
         }
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MiuixTheme.colorScheme.background)
+                .background(MiuixTheme.colorScheme.surface)
                 .padding(paddingValues)
         ) {
             Card(

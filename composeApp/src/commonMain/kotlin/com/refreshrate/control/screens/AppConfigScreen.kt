@@ -69,7 +69,7 @@ fun AppConfigScreen(
         topBar = {
             TopAppBar(
                 title = appLabel,
-                color = MiuixTheme.colorScheme.background,
+                color = MiuixTheme.colorScheme.surface,
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(MiuixIcons.Back, contentDescription = "返回")
@@ -86,7 +86,7 @@ fun AppConfigScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MiuixTheme.colorScheme.background)
+                .background(MiuixTheme.colorScheme.surface)
                 .padding(paddingValues)
                 .verticalScroll(rememberScrollState())
         ) {

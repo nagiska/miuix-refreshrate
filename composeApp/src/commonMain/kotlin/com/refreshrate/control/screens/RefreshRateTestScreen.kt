@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
@@ -45,6 +46,7 @@ import kotlin.math.roundToInt
 
 @Composable
 fun RefreshRateTestScreen(onBack: () -> Unit) {
+    val appContext = LocalAppContext.current
     val displayData = refreshDisplayData()
     var measuredHz by remember { mutableDoubleStateOf(0.0) }
     var deliveredFps by remember { mutableDoubleStateOf(0.0) }
@@ -54,10 +56,24 @@ fun RefreshRateTestScreen(onBack: () -> Unit) {
     var sampleCount by remember { mutableIntStateOf(0) }
     var phase by remember { mutableFloatStateOf(0f) }
 
+    DisposableEffect(Unit) {
+        logRefreshRateTest(appContext, "START")
+        onDispose {
+            logRefreshRateTest(
+                appContext,
+                "STOP",
+                "measuredHz=${formatOneDecimal(measuredHz)} deliveredFps=${formatOneDecimal(deliveredFps)} " +
+                    "frameMs=${formatOneDecimal(frameTimeMs)} jitterMs=${formatTwoDecimals(jitterMs)} " +
+                    "dropped=$droppedFrames samples=$sampleCount"
+            )
+        }
+    }
+
     LaunchedEffect(Unit) {
         val intervals = ArrayDeque<Long>()
         var previousFrame = 0L
         var lastPublish = 0L
+        var lastLog = 0L
         while (currentCoroutineContext().isActive) {
             withFrameNanos { frameNanos ->
                 phase = ((frameNanos / 1_000_000L) % 2400L) / 2400f
@@ -84,6 +100,16 @@ fun RefreshRateTestScreen(onBack: () -> Unit) {
                     droppedFrames = intervals.count { it > median * 1.5 }
                     sampleCount = intervals.size
                     lastPublish = frameNanos
+                    if (frameNanos - lastLog >= 1_000_000_000L) {
+                        logRefreshRateTest(
+                            appContext,
+                            "SAMPLE",
+                            "measuredHz=${formatOneDecimal(measuredHz)} deliveredFps=${formatOneDecimal(deliveredFps)} " +
+                                "frameMs=${formatOneDecimal(frameTimeMs)} jitterMs=${formatTwoDecimals(jitterMs)} " +
+                                "dropped=$droppedFrames samples=$sampleCount"
+                        )
+                        lastLog = frameNanos
+                    }
                 }
             }
         }
@@ -93,7 +119,7 @@ fun RefreshRateTestScreen(onBack: () -> Unit) {
         topBar = {
             TopAppBar(
                 title = "实时刷新率检测",
-                color = MiuixTheme.colorScheme.background,
+                color = MiuixTheme.colorScheme.surface,
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(MiuixIcons.Back, contentDescription = "返回")
@@ -105,7 +131,7 @@ fun RefreshRateTestScreen(onBack: () -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MiuixTheme.colorScheme.background)
+                .background(MiuixTheme.colorScheme.surface)
                 .padding(paddingValues)
         ) {
             Column(

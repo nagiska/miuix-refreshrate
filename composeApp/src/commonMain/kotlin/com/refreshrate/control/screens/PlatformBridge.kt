@@ -94,3 +94,5 @@ expect fun getEnabledAppCount(): Int
 expect fun isAccessibilityServiceEnabled(): Boolean
 
 expect fun testRefreshRateSwitch(authMode: String): Boolean
+
+expect fun logRefreshRateTest(context: AppContext, event: String, metrics: String = "")

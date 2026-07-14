@@ -25,6 +25,7 @@ import java.util.concurrent.Executors
 
 private val manualSwitchGeneration = AtomicLong(0)
 private val manualSwitchExecutor = Executors.newSingleThreadExecutor()
+private val refreshTestLogExecutor = Executors.newSingleThreadExecutor()
 
 actual class AppContext(val context: Context)
 
@@ -133,6 +134,19 @@ actual fun applyDisplayMode(authMode: String, mode: DisplayMode, context: AppCon
             android.util.Log.e("PlatformBridge", "applyDisplayMode failed: ${e.message}")
             com.refreshrate.control.util.RuntimeLog.append(context.context, "ManualSwitch", "failed=${e.message}")
         }
+    }
+}
+
+actual fun logRefreshRateTest(context: AppContext, event: String, metrics: String) {
+    refreshTestLogExecutor.execute {
+        val ctx = context.context
+        val androidHz = AutoOverclockManager.getCurrentRefreshRate(ctx)
+        val rootState = RootUtils.readDisplayState()
+        RuntimeLog.append(
+            ctx,
+            "RefreshRateTest",
+            "$event${if (metrics.isNotBlank()) " $metrics" else ""} android=${androidHz}Hz root={${rootState.summary()}}"
+        )
     }
 }
 

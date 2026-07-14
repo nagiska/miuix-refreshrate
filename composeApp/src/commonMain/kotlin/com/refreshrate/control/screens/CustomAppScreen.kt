@@ -61,10 +61,10 @@ fun CustomAppScreen(
             )
     }
 
-    Column(modifier = modifier.background(MiuixTheme.colorScheme.background)) {
+    Column(modifier = modifier.background(MiuixTheme.colorScheme.surface)) {
         SmallTopAppBar(
             title = "应用",
-            color = MiuixTheme.colorScheme.background,
+            color = MiuixTheme.colorScheme.surface,
             actions = {
                 // System apps toggle
                 Text(
