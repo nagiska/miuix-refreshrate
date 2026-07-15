@@ -22,6 +22,8 @@ import com.refreshrate.control.util.RootUtils
 import com.refreshrate.control.util.RuntimeLog
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.Executors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 private val manualSwitchGeneration = AtomicLong(0)
 private val manualSwitchExecutor = Executors.newSingleThreadExecutor()
@@ -45,14 +47,32 @@ actual fun refreshDisplayData(refreshKey: Int): DisplayData? {
         var modeGroups: List<Pair<String, List<DisplayMode>>> = emptyList()
         while (true) {
             try {
-                val authMode = PrefsHelper.getAuthMode(context).ifEmpty { "root" }
-                val current = AutoOverclockManager.getCurrentMode(context)
-                if (modeGroups.isEmpty()) {
-                    val modes = AutoOverclockManager.getSupportedModes(context)
-                    modeGroups = AutoOverclockManager.groupByResolution(modes)
-                        .entries.map { it.key to it.value }.toList()
+                val nextData = withContext(Dispatchers.IO) {
+                    val authMode = PrefsHelper.getAuthMode(context).ifEmpty { "root" }
+                    val current = AutoOverclockManager.getCurrentMode(context)
+                    if (modeGroups.isEmpty()) {
+                        val modes = AutoOverclockManager.getSupportedModes(context)
+                        modeGroups = AutoOverclockManager.groupByResolution(modes)
+                            .entries.map { it.key to it.value }.toList()
+                    }
+                    DisplayData(current, authMode, modeGroups)
                 }
-                data = DisplayData(current, authMode, modeGroups)
+                val previous = data
+                val previousMode = previous?.currentMode
+                val nextMode = nextData.currentMode
+                val modeUnchanged = previousMode == null && nextMode == null ||
+                    previousMode != null && nextMode != null &&
+                    previousMode.width == nextMode.width &&
+                    previousMode.height == nextMode.height &&
+                    previousMode.rateInt == nextMode.rateInt &&
+                    previousMode.modeId == nextMode.modeId
+                if (previous == null ||
+                    previous.authMode != nextData.authMode ||
+                    previous.modeGroups !== nextData.modeGroups ||
+                    !modeUnchanged
+                ) {
+                    data = nextData
+                }
             } catch (e: Exception) {
             }
             kotlinx.coroutines.delay(1000)
