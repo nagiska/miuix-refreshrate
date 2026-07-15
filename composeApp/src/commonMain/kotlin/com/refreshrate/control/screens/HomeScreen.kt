@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -18,30 +19,29 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.refreshrate.control.model.DisplayMode
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.HorizontalDivider
-import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.CardDefaults
+import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
+import top.yukonga.miuix.kmp.basic.ProgressIndicatorDefaults
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Ok
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.PressFeedbackType
 
 @Composable
 fun HomeScreen(
@@ -50,12 +50,30 @@ fun HomeScreen(
 ) {
     val appContext = LocalAppContext.current
     var refreshTrigger by remember { mutableIntStateOf(0) }
+    var switchingMode by remember { mutableStateOf<DisplayMode?>(null) }
     val scope = rememberCoroutineScope()
     val displayData = refreshDisplayData(refreshTrigger)
     val enabledAppCount = getEnabledAppCount()
 
     val accessibilityEnabled = isAccessibilityServiceEnabled()
     val authMode = displayData?.authMode ?: ""
+
+    LaunchedEffect(switchingMode?.modeId, displayData?.currentMode?.modeId) {
+        val target = switchingMode ?: return@LaunchedEffect
+        val current = displayData?.currentMode ?: return@LaunchedEffect
+        if (current.width == target.width && current.height == target.height && current.rateInt == target.rateInt) {
+            switchingMode = null
+        }
+    }
+
+    LaunchedEffect(switchingMode?.modeId) {
+        val target = switchingMode ?: return@LaunchedEffect
+        delay(20_000)
+        if (switchingMode === target) {
+            switchingMode = null
+            refreshTrigger++
+        }
+    }
 
     Column(modifier = modifier) {
         SmallTopAppBar(
@@ -128,35 +146,27 @@ fun HomeScreen(
                     SmallTitle(text = resolution)
                 }
                 item {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 12.dp)
-                    ) {
-                        modes.forEachIndexed { index, mode ->
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        modes.forEach { mode ->
+                            val isCurrent = displayData.currentMode?.let {
+                                it.width == mode.width && it.height == mode.height && it.rateInt == mode.rateInt
+                            } == true
+                            val isSwitching = switchingMode === mode
                             RateCardItem(
                                 mode = mode,
-                                isCurrent = displayData.currentMode?.let {
-                                    it.width == mode.width && it.height == mode.height && it.rateInt == mode.rateInt
-                                } == true,
+                                isCurrent = isCurrent,
+                                isSwitching = isSwitching,
                                 onClick = {
-                                    scope.launch {
-                                        val currentHz = displayData.currentMode?.rateInt ?: 0
-                                        val targetHz = mode.rateInt
-                                        applyDisplayMode(displayData.authMode, mode, appContext)
-                                        // Calculate delay based on actual stepping steps
-                                        val stepCount = displayData.modeGroups
-                                            .flatMap { it.second }
-                                            .count { it.rateInt > currentHz && it.rateInt <= targetHz }
-                                        val stepDelay = if (targetHz > currentHz) {
-                                            stepCount * 800L + 1000L
-                                        } else 1000L
-                                        delay(stepDelay)
-                                        refreshTrigger++
+                                    if (!isCurrent) {
+                                        switchingMode = mode
+                                        scope.launch {
+                                            applyDisplayMode(displayData.authMode, mode, appContext)
+                                            delay(1_000)
+                                            refreshTrigger++
+                                        }
                                     }
-                                }
+                                },
                             )
-                            if (index < modes.size - 1) HorizontalDivider()
                         }
                     }
                 }
@@ -311,20 +321,62 @@ private fun CustomAppCountCard(
 private fun RateCardItem(
     mode: DisplayMode,
     isCurrent: Boolean,
-    onClick: () -> Unit
+    isSwitching: Boolean,
+    onClick: () -> Unit,
 ) {
-    BasicComponent(
-        title = "${mode.rateInt}Hz · ${mode.rateName}",
-        summary = mode.rateDesc,
+    val highlighted = isSwitching
+    val color = if (highlighted) MiuixTheme.colorScheme.primaryVariant else MiuixTheme.colorScheme.surfaceContainer
+    val titleColor = if (highlighted) MiuixTheme.colorScheme.onPrimaryVariant else MiuixTheme.colorScheme.onSurfaceContainer
+    val summaryColor = if (highlighted) MiuixTheme.colorScheme.onPrimaryVariant else MiuixTheme.colorScheme.onSurfaceVariantSummary
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        insideMargin = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
+        colors = CardDefaults.defaultColors(color = color, contentColor = titleColor),
+        pressFeedbackType = PressFeedbackType.Sink,
+        showIndication = true,
         onClick = onClick,
-        endActions = {
-            if (isCurrent) {
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
+                    text = "${mode.rateInt}Hz · ${mode.rateName}",
+                    style = MiuixTheme.textStyles.title4,
+                    color = titleColor,
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    text = mode.rateDesc,
+                    style = MiuixTheme.textStyles.footnote1,
+                    color = summaryColor,
+                )
+            }
+            when {
+                isSwitching -> {
+                    CircularProgressIndicator(
+                        colors = ProgressIndicatorDefaults.progressIndicatorColors(
+                            foregroundColor = MiuixTheme.colorScheme.onPrimary,
+                            backgroundColor = MiuixTheme.colorScheme.onPrimary.copy(alpha = 0.26f),
+                        ),
+                        size = 26.dp,
+                        strokeWidth = 3.dp,
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = "切换中",
+                        style = MiuixTheme.textStyles.footnote1,
+                        color = titleColor,
+                    )
+                }
+                isCurrent -> Text(
                     text = "当前",
                     style = MiuixTheme.textStyles.body2,
-                    color = MiuixTheme.colorScheme.primary
+                    color = MiuixTheme.colorScheme.primary,
                 )
             }
         }
-    )
+    }
 }
