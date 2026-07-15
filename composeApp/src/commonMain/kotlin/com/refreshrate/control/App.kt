@@ -2,6 +2,10 @@ package com.refreshrate.control
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -80,9 +84,23 @@ fun App() {
                     targetState = currentSubScreen,
                     transitionSpec = {
                         if (targetState != null) {
-                            slideInHorizontally { it } togetherWith slideOutHorizontally { -it / 3 }
+                            (slideInHorizontally(
+                                animationSpec = tween(320, easing = FastOutSlowInEasing),
+                                initialOffsetX = { it / 6 },
+                            ) + fadeIn(animationSpec = tween(220, delayMillis = 60))) togetherWith
+                                (slideOutHorizontally(
+                                    animationSpec = tween(280, easing = FastOutSlowInEasing),
+                                    targetOffsetX = { -it / 16 },
+                                ) + fadeOut(animationSpec = tween(180)))
                         } else {
-                            slideInHorizontally { -it / 3 } togetherWith slideOutHorizontally { it }
+                            (slideInHorizontally(
+                                animationSpec = tween(300, easing = FastOutSlowInEasing),
+                                initialOffsetX = { -it / 16 },
+                            ) + fadeIn(animationSpec = tween(220, delayMillis = 40))) togetherWith
+                                (slideOutHorizontally(
+                                    animationSpec = tween(300, easing = FastOutSlowInEasing),
+                                    targetOffsetX = { it / 6 },
+                                ) + fadeOut(animationSpec = tween(180)))
                         }
                     }
                 ) { subScreen ->
