@@ -5,11 +5,9 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -19,22 +17,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
-import top.yukonga.miuix.kmp.basic.FloatingNavigationBar
-import top.yukonga.miuix.kmp.basic.FloatingNavigationBarItem
 import top.yukonga.miuix.kmp.basic.NavigationItem
-import top.yukonga.miuix.kmp.blur.BlendColorEntry
-import top.yukonga.miuix.kmp.blur.BlurBlendMode
-import top.yukonga.miuix.kmp.blur.BlurDefaults
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
-import top.yukonga.miuix.kmp.blur.textureBlur
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.icon.extended.VerticalSplit
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import com.refreshrate.control.components.IosGlassNavigationBar
 import com.refreshrate.control.effect.Os3Background
 import com.refreshrate.control.screens.HomeScreen
 import com.refreshrate.control.screens.LocalAppContext
@@ -143,17 +134,6 @@ private fun MainScaffold(
         NavigationItem("应用", MiuixIcons.VerticalSplit),
         NavigationItem("设置", MiuixIcons.Settings)
     )
-    val isDark = isSystemInDarkTheme()
-    val blurColors = BlurDefaults.blurColors(
-        blendColors = listOf(
-            BlendColorEntry(
-                color = if (isDark) Color.Black.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.28f),
-                mode = BlurBlendMode.SrcOver
-            )
-        ),
-        saturation = 1.25f
-    )
-
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
@@ -180,26 +160,12 @@ private fun MainScaffold(
                 .fillMaxWidth(),
             contentAlignment = Alignment.BottomCenter,
         ) {
-            FloatingNavigationBar(
-                modifier = Modifier.textureBlur(
-                    backdrop = backdrop,
-                    shape = RoundedCornerShape(28.dp),
-                    blurRadius = 36f,
-                    colors = blurColors,
-                ),
-                color = Color.Transparent,
-                cornerRadius = 28.dp,
-                shadowElevation = 0.dp,
-            ) {
-                items.forEachIndexed { index, item ->
-                    FloatingNavigationBarItem(
-                        selected = currentTab == index,
-                        onClick = { onTabChange(index) },
-                        icon = item.icon,
-                        label = item.label,
-                    )
-                }
-            }
+            IosGlassNavigationBar(
+                items = items,
+                selectedIndex = currentTab,
+                onItemClick = onTabChange,
+                backdrop = backdrop,
+            )
         }
     }
 }

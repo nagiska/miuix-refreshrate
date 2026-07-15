@@ -2,7 +2,6 @@ package com.refreshrate.control.screens
 
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -182,10 +181,8 @@ private fun StatusCard(
     rateName: String,
     authMode: String
 ) {
-    val isDark = isSystemInDarkTheme()
-    val cardBg = if (isDark) Color(0xFF1E3D2E).copy(alpha = 0.82f) else Color(0xFFE8F5E9).copy(alpha = 0.86f)
-    val titleColor = if (isDark) Color.White else Color(0xFF1A1A1A)
-    val subtitleColor = if (isDark) Color(0xFFD0D0D0) else Color(0xFF666666)
+    val titleColor = MiuixTheme.colorScheme.onSurfaceContainer
+    val subtitleColor = MiuixTheme.colorScheme.onSurfaceVariantSummary
     val accentColor = Color(0xFF34C759)
 
     Card(
@@ -193,9 +190,7 @@ private fun StatusCard(
             .fillMaxWidth()
             .height(200.dp),
         cornerRadius = 20.dp,
-        colors = top.yukonga.miuix.kmp.basic.CardDefaults.defaultColors(
-            color = cardBg
-        )
+        colors = CardDefaults.defaultColors(),
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             Column(
