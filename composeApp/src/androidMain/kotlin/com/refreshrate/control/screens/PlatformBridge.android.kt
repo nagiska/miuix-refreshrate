@@ -189,7 +189,10 @@ actual fun loadEnabledApps(): List<EnabledAppData> {
         try {
             apps = PrefsHelper.getEnabledApps(context).map {
                 val parts = it.third.split(" @ ")
-                val hzStr = parts.getOrNull(1)?.replace("Hz", "")?.toIntOrNull() ?: -1
+                val hzStr = when (val rate = parts.getOrNull(1)) {
+                    "自动最高" -> 0
+                    else -> rate?.removeSuffix("Hz")?.toIntOrNull() ?: -1
+                }
                 EnabledAppData(it.first, it.second, it.third, hzStr, true)
             }
         } catch (e: Exception) {
@@ -383,7 +386,7 @@ actual fun testRefreshRateSwitch(authMode: String): Boolean {
         }
         val mode = modes.first()
         android.util.Log.d("TestSwitch", "Testing: ${mode.width}x${mode.height} @ ${mode.rateInt}Hz, sfIndex=${mode.sfIndex}")
-        com.refreshrate.control.util.RootUtils.setDisplayMode(mode.width, mode.height, mode.rateInt, mode.modeId - 1)
+        com.refreshrate.control.util.RootUtils.setDisplayMode(mode.width, mode.height, mode.rateInt, mode.sfIndex)
     } catch (e: Exception) {
         android.util.Log.e("TestSwitch", "Test failed: ${e.message}")
         false

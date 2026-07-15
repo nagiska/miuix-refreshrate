@@ -40,8 +40,9 @@ object PrefsHelper {
                 } catch (e: Exception) {
                     pkg
                 }
-                if (res.isNotEmpty() && hz > 0) {
-                    result.add(Triple(pkg, label, "$res @ ${hz}Hz"))
+                if (res.isNotEmpty() && hz >= 0) {
+                    val rateLabel = if (hz == 0) "自动最高" else "${hz}Hz"
+                    result.add(Triple(pkg, label, "$res @ $rateLabel"))
                 }
             }
         }
@@ -96,9 +97,10 @@ object PrefsHelper {
 
     fun getHzList(context: Context, resolution: String): List<Int> {
         val modes = getDisplayModes(context)
-        return modes.filter { it.resolutionLabel == resolution }
+        val rates = modes.filter { it.resolutionLabel == resolution }
             .map { it.rateInt }
             .distinct()
             .sortedDescending()
+        return if (rates.isEmpty()) emptyList() else listOf(0) + rates
     }
 }

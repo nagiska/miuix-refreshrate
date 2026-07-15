@@ -25,7 +25,7 @@ object AutoOverclockManager {
                         val key = "${m.physicalWidth}x${m.physicalHeight}@${m.refreshRate.toInt()}"
                         if (seen.add(key)) {
                             val dm2 = DisplayMode(m.physicalWidth, m.physicalHeight, m.refreshRate, m.modeId)
-                            dm2.sfIndex = m.modeId
+                            dm2.sfIndex = m.modeId - 1
                             dm2
                         } else null
                     }.filterNotNull()
@@ -43,20 +43,32 @@ object AutoOverclockManager {
                 val displayModes = display.supportedModes ?: return emptyList()
 
                 val seen = mutableSetOf<String>()
-                return displayModes.map { m ->
+                return normalizeModes(displayModes.map { m ->
                     val key = "${m.physicalWidth}x${m.physicalHeight}@${m.refreshRate.toInt()}"
                     if (seen.add(key)) {
                         val dm2 = DisplayMode(m.physicalWidth, m.physicalHeight, m.refreshRate, m.modeId)
-                        dm2.sfIndex = m.modeId
+                        dm2.sfIndex = m.modeId - 1
                         dm2
                     } else null
-                }.filterNotNull().sortedByDescending { it.rateInt }
+                }.filterNotNull())
             } catch (e: Exception) {
                 return emptyList()
             }
         }
 
+        return normalizeModes(modes).also { normalized ->
+            RuntimeLog.appendGlobal(
+                TAG,
+                "MODE_SCAN count=${normalized.size} byResolution=${normalized.groupBy { it.resolutionLabel }.mapValues { (_, values) -> values.maxOf { it.rateInt } }}"
+            )
+        }
+    }
+
+    private fun normalizeModes(modes: List<DisplayMode>): List<DisplayMode> {
         return modes
+            .filter { it.width > 0 && it.height > 0 && it.rateInt in 30..300 }
+            .distinctBy { Triple(it.width, it.height, it.rateInt) }
+            .sortedWith(compareBy<DisplayMode> { it.width }.thenBy { it.height }.thenBy { it.rateInt })
     }
 
     fun getCurrentMode(context: Context): DisplayMode? {

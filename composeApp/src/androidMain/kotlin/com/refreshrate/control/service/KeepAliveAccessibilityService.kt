@@ -371,13 +371,77 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         }
 
         val res = prefs.getString("app_refresh_res_$effectivePkg", "") ?: ""
-        val hz = prefs.getInt("app_refresh_hz_$effectivePkg", -1)
-        if (res.isEmpty() || hz <= 0) {
-            Log.w(TAG, "应用 $effectivePkg 配置不完整: res=$res, hz=$hz")
+        val requestedHz = prefs.getInt("app_refresh_hz_$effectivePkg", -1)
+        if (res.isEmpty() || requestedHz < 0) {
+            Log.w(TAG, "应用 $effectivePkg 配置不完整: res=$res, hz=$requestedHz")
             return
         }
 
-        val configKey = "$effectivePkg@$res@$hz"
+        val modes = if (requestedHz == 0) {
+            AutoOverclockManager.getSupportedModes(this).also { cachedModes = it }
+        } else {
+            cachedModes.ifEmpty { AutoOverclockManager.getSupportedModes(this) }
+        }
+        val resolvedHz = resolveConfiguredRefreshRate(res, requestedHz, modes)
+        if (resolvedHz == null) {
+            if (requestedHz == 0) return
+            runtimeLog("MODE_FALLBACK settingsOnly res=$res target=${requestedHz}Hz")
+            val fallbackKey = "$effectivePkg@$res@$requestedHz"
+            if (fallbackKey == lastAppliedConfig || !isConfiguredForegroundConfirmed(basePkg)) return
+            if (restoreWatchdogActive) {
+                runtimeLog(
+                    "RESTORE watchdog handoff target=${restoreMode?.resolutionLabel}@${restoreHz}Hz " +
+                        "to=$effectivePkg gen=$restoreWatchdogGeneration"
+                )
+                restoreWatchdogActive = false
+                restoreWatchdogGeneration = -1L
+            }
+            val generation = nextSwitchGeneration()
+            if (restoreMode == null) {
+                restoreMode = AutoOverclockManager.getCurrentMode(this)
+                restoreHz = restoreMode?.rateInt ?: AutoOverclockManager.getCurrentRefreshRate(this)
+                saveRestoreState(prefs, restoreMode, restoreHz)
+                runtimeLog("RESTORE save ${restoreMode?.resolutionLabel ?: "?"}@${restoreHz}Hz")
+            }
+            lastAppliedConfig = fallbackKey
+            restoreSourceHz = requestedHz
+            prefs.edit()
+                .putString(KEY_LAST_APPLIED_CONFIG, fallbackKey)
+                .putInt(KEY_RESTORE_SOURCE_HZ, requestedHz)
+                .apply()
+            restoreInProgress = false
+            restoringToPackage = ""
+            switchThread = Thread {
+                withSwitchWakeLock("apply-fallback") {
+                    if (!isSwitchCancelled(generation)) {
+                        val currentHz = AutoOverclockManager.getCurrentRefreshRate(this)
+                        val ok = if (currentHz > requestedHz) {
+                            RootUtils.setRateDown(null, requestedHz)
+                        } else {
+                            RootUtils.setRate(null, requestedHz)
+                        }
+                        val verification = waitForRefreshRate(
+                            requestedHz,
+                            VERIFY_TIMEOUT_MS,
+                            "applyFallback",
+                            generation
+                        )
+                        runtimeLog("APPLY fallback target=${requestedHz}Hz ok=$ok ${verification.summary()}")
+                        if (!verification.matched && generation == switchGeneration && lastAppliedConfig == fallbackKey) {
+                            lastAppliedConfig = ""
+                            prefs.edit().remove(KEY_LAST_APPLIED_CONFIG).apply()
+                            runtimeLog("APPLY fallback pending target=${requestedHz}Hz retry=true")
+                        }
+                    }
+                }
+            }.apply { start() }
+            return
+        }
+        val configKey = if (requestedHz == 0) {
+            "$effectivePkg@$res@auto:$resolvedHz"
+        } else {
+            "$effectivePkg@$res@$resolvedHz"
+        }
         if (configKey == lastAppliedConfig) {
             return
         }
@@ -403,18 +467,19 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         }
 
         lastAppliedConfig = configKey
-        restoreSourceHz = hz
+        restoreSourceHz = resolvedHz
         prefs.edit()
             .putString(KEY_LAST_APPLIED_CONFIG, configKey)
-            .putInt(KEY_RESTORE_SOURCE_HZ, hz)
+            .putInt(KEY_RESTORE_SOURCE_HZ, resolvedHz)
             .apply()
-        Log.i(TAG, "自定义刷新率切换: $effectivePkg → $res @ ${hz}Hz")
-        runtimeLog("APPLY pkg=$effectivePkg target=$res@${hz}Hz")
+        val requestedLabel = if (requestedHz == 0) "自动最高" else "${requestedHz}Hz"
+        Log.i(TAG, "自定义刷新率切换: $effectivePkg → $res @ $requestedLabel (resolved=${resolvedHz}Hz)")
+        runtimeLog("APPLY pkg=$effectivePkg target=$res@$requestedLabel resolved=${resolvedHz}Hz")
         restoreInProgress = false
         restoringToPackage = ""
         switchThread = Thread {
             withSwitchWakeLock("apply") {
-                applyDisplayTarget(res, hz, configKey, generation)
+                applyDisplayTarget(res, resolvedHz, configKey, generation, modes)
             }
         }.apply { start() }
     }
@@ -543,7 +608,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
             restoreHz = hz
             if (width > 0 && height > 0 && modeId > 0) {
                 restoreMode = DisplayMode(width, height, hz.toFloat(), modeId).apply {
-                    sfIndex = modeId
+                    sfIndex = modeId - 1
                 }
             }
             lastAppliedConfig = prefs.getString(KEY_LAST_APPLIED_CONFIG, "") ?: ""
@@ -617,14 +682,41 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         return basePkg
     }
 
-    private fun applyDisplayTarget(res: String, hz: Int, configKey: String, generation: Long) {
+    private fun resolveConfiguredRefreshRate(res: String, requestedHz: Int, modes: List<DisplayMode>): Int? {
+        val candidates = modes.filter { it.resolutionLabel == res }.sortedBy { it.rateInt }
+        if (candidates.isEmpty()) {
+            runtimeLog("MODE_FALLBACK res=$res requested=${if (requestedHz == 0) "auto" else "${requestedHz}Hz"} available=[]")
+            return null
+        }
+        if (requestedHz == 0) {
+            val resolved = candidates.last().rateInt
+            runtimeLog("AUTO_MAX res=$res available=${candidates.map { it.rateInt }} resolved=${resolved}Hz")
+            return resolved
+        }
+        val exact = candidates.firstOrNull { it.rateInt == requestedHz }
+        if (exact != null) return exact.rateInt
+        val fallback = candidates.lastOrNull { it.rateInt <= requestedHz } ?: candidates.first()
+        runtimeLog(
+            "MODE_FALLBACK res=$res requested=${requestedHz}Hz available=${candidates.map { it.rateInt }} " +
+                "resolved=${fallback.rateInt}Hz"
+        )
+        return fallback.rateInt
+    }
+
+    private fun applyDisplayTarget(
+        res: String,
+        hz: Int,
+        configKey: String,
+        generation: Long,
+        availableModes: List<DisplayMode>
+    ) {
         try {
             val wh = res.split("x")
             if (wh.size != 2) return
             val targetW = wh[0].toInt()
             val targetH = wh[1].toInt()
 
-            val modes = cachedModes.ifEmpty { AutoOverclockManager.getSupportedModes(this) }
+            val modes = availableModes
             val currentHz = AutoOverclockManager.getCurrentRefreshRate(this)
 
             var target: DisplayMode? = null
@@ -637,7 +729,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
             if (target == null) {
                 for (m in modes) {
                     if (m.width == targetW && m.height == targetH) {
-                        if (target == null || Math.abs(m.rateInt - hz) < Math.abs(target.rateInt - hz)) {
+                        if (m.rateInt <= hz && (target == null || m.rateInt > target.rateInt)) {
                             target = m
                         }
                     }
@@ -646,7 +738,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
 
             if (target == null) {
                 Log.w(TAG, "未找到匹配模式，仅设置 settings: $res @ ${hz}Hz")
-                runtimeLog("未找到匹配模式，仅 settings: $res @ ${hz}Hz")
+                runtimeLog("MODE_FALLBACK noTarget res=$res requested=${hz}Hz")
                 if (!isSwitchCancelled(generation)) {
                     if (currentHz > hz) RootUtils.setRateDown(null, hz) else RootUtils.setRate(null, hz)
                 }
@@ -685,7 +777,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                     }
                     sleepBeforeRetry(attempt)
                 }
-                Log.d(TAG, "应用刷新率切换校验: $res @ ${hz}Hz (modeId=${target.modeId}) applied=$applied")
+                Log.d(TAG, "应用刷新率切换校验: $res @ ${target.rateInt}Hz (modeId=${target.modeId}) applied=$applied")
                 runtimeLog("SNAPSHOT apply final ${RootUtils.readDisplaySnapshot()}")
                 if (applied) {
                     runtimeLog("APPLY success target=${target.rateInt}Hz ${lastVerification?.summary().orEmpty()}")
@@ -915,8 +1007,9 @@ class KeepAliveAccessibilityService : AccessibilityService() {
             val title = "$appLabel  $statusLine"
 
             val big = StringBuilder()
-            if (enabled && setRes.isNotEmpty() && setHz > 0) {
-                big.append("设置: $setRes @ ${setHz}Hz\n")
+            if (enabled && setRes.isNotEmpty() && setHz >= 0) {
+                val setRate = if (setHz == 0) "自动最高" else "${setHz}Hz"
+                big.append("设置: $setRes @ $setRate\n")
             }
             big.append(curLine)
 

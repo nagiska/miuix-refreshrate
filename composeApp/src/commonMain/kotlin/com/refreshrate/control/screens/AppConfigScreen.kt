@@ -55,10 +55,10 @@ fun AppConfigScreen(
 
         if (resolutions.isNotEmpty()) {
             selectedResIndex = resolutions.indexOf(savedRes).coerceAtLeast(0)
-            hzList = loadHzList(appContext, resolutions[selectedResIndex]).map { "${it}Hz" }
+            hzList = loadHzList(appContext, resolutions[selectedResIndex]).map { formatRefreshRateOption(it) }
 
             if (hzList.isNotEmpty()) {
-                val savedHzStr = "${savedHz}Hz"
+                val savedHzStr = formatRefreshRateOption(savedHz)
                 selectedHzIndex = hzList.indexOf(savedHzStr).coerceAtLeast(0)
             }
         }
@@ -105,7 +105,7 @@ fun AppConfigScreen(
                     onCheckedChange = {
                         enabled = it
                         val res = resolutions.getOrNull(selectedResIndex) ?: ""
-                        val hz = hzList.getOrNull(selectedHzIndex)?.replace("Hz", "")?.toIntOrNull() ?: -1
+                        val hz = refreshRateOptionValue(hzList.getOrNull(selectedHzIndex))
                         saveAppConfig(appContext, packageName, it, res, hz)
                     }
                 )
@@ -126,10 +126,10 @@ fun AppConfigScreen(
                         selectedIndex = selectedResIndex,
                         onSelectedIndexChange = {
                             selectedResIndex = it
-                            hzList = loadHzList(appContext, resolutions[it]).map { hz -> "${hz}Hz" }
+                            hzList = loadHzList(appContext, resolutions[it]).map { hz -> formatRefreshRateOption(hz) }
                             selectedHzIndex = 0
                             val res = resolutions[it]
-                            val hz = hzList.getOrNull(0)?.replace("Hz", "")?.toIntOrNull() ?: -1
+                            val hz = refreshRateOptionValue(hzList.getOrNull(0))
                             saveAppConfig(appContext, packageName, enabled, res, hz)
                         }
                     )
@@ -151,7 +151,7 @@ fun AppConfigScreen(
                             onSelectedIndexChange = {
                                 selectedHzIndex = it
                                 val res = resolutions.getOrNull(selectedResIndex) ?: ""
-                                val hz = hzList[it].replace("Hz", "").toIntOrNull() ?: -1
+                                val hz = refreshRateOptionValue(hzList[it])
                                 saveAppConfig(appContext, packageName, enabled, res, hz)
                             }
                         )
@@ -162,4 +162,10 @@ fun AppConfigScreen(
             Spacer(Modifier.height(16.dp))
         }
     }
+}
+
+private fun formatRefreshRateOption(hz: Int): String = if (hz == 0) "自动最高" else "${hz}Hz"
+
+private fun refreshRateOptionValue(option: String?): Int {
+    return if (option == "自动最高") 0 else option?.removeSuffix("Hz")?.toIntOrNull() ?: -1
 }

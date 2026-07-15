@@ -136,11 +136,11 @@ fun CustomAppScreen(
                                 style = MiuixTheme.textStyles.footnote1,
                                 color = MiuixTheme.colorScheme.onBackgroundVariant
                             )
-                            if (isConfigured && hz > 0) {
+                            if (isConfigured && hz >= 0) {
                                 Spacer(Modifier.height(4.dp))
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        text = "${hz}Hz",
+                                        text = if (hz == 0) "自动最高" else "${hz}Hz",
                                         style = MiuixTheme.textStyles.footnote1,
                                         color = MiuixTheme.colorScheme.primary,
                                         fontWeight = FontWeight.Bold

@@ -140,16 +140,16 @@ object RootUtils {
             val fps = match.groupValues[4].toFloatOrNull()?.roundToInt() ?: continue
             if (fps in 30..300) {
                 val dm = DisplayMode(w, h, fps.toFloat(), id)
-                dm.sfIndex = id
+                dm.sfIndex = id - 1
                 modes.add(dm)
             }
         }
         return modes.sortedBy { it.rateInt }
     }
 
-    fun setRate(dumpsysModeId: Int?, targetHz: Int): Boolean {
-        val sfIndex = if (dumpsysModeId != null && dumpsysModeId > 0) dumpsysModeId - 1 else null
-        Log.d(TAG, "setRate: modeId=$dumpsysModeId, hz=$targetHz, sfIndex=$sfIndex")
+    fun setRate(mode: DisplayMode?, targetHz: Int): Boolean {
+        val sfIndex = mode?.sfIndex?.takeIf { it >= 0 }
+        Log.d(TAG, "setRate: modeId=${mode?.modeId}, hz=$targetHz, sfIndex=$sfIndex")
         val script = buildString {
             if (sfIndex != null) {
                 appendLine("service call SurfaceFlinger 1035 i32 $sfIndex")
@@ -160,14 +160,14 @@ object RootUtils {
             appendLine("settings put secure miui_refresh_rate $targetHz")
             appendLine("settings put system thermal_limit_refresh_rate $targetHz 2>/dev/null")
         }
-        val result = execRootDetailed(script.trimEnd(), "setRate:${targetHz}Hz modeId=${dumpsysModeId ?: "none"} sfIndex=${sfIndex ?: "none"}")
+        val result = execRootDetailed(script.trimEnd(), "setRate:${targetHz}Hz modeId=${mode?.modeId ?: "none"} sfIndex=${sfIndex ?: "none"}")
         Log.d(TAG, "setRate result: ${result.ok}")
         return result.ok
     }
 
-    fun setRateDown(dumpsysModeId: Int?, targetHz: Int): Boolean {
-        val sfIndex = if (dumpsysModeId != null && dumpsysModeId > 0) dumpsysModeId - 1 else null
-        Log.d(TAG, "setRateDown: modeId=$dumpsysModeId, hz=$targetHz, sfIndex=$sfIndex")
+    fun setRateDown(mode: DisplayMode?, targetHz: Int): Boolean {
+        val sfIndex = mode?.sfIndex?.takeIf { it >= 0 }
+        Log.d(TAG, "setRateDown: modeId=${mode?.modeId}, hz=$targetHz, sfIndex=$sfIndex")
         val script = buildString {
             // Reverse the working upshift order so min never remains above peak.
             appendLine("settings put system thermal_limit_refresh_rate $targetHz 2>/dev/null")
@@ -181,7 +181,7 @@ object RootUtils {
         }
         val result = execRootDetailed(
             script.trimEnd(),
-            "setRateDown:${targetHz}Hz modeId=${dumpsysModeId ?: "none"} sfIndex=${sfIndex ?: "none"}"
+            "setRateDown:${targetHz}Hz modeId=${mode?.modeId ?: "none"} sfIndex=${sfIndex ?: "none"}"
         )
         Log.d(TAG, "setRateDown result: ${result.ok}")
         return result.ok
@@ -280,7 +280,7 @@ object RootUtils {
                     return false
                 }
                 Log.d(TAG, "stepping to ${step.rateInt}Hz (modeId=${step.modeId})")
-                val stepOk = setRate(step.modeId, step.rateInt)
+                val stepOk = setRate(step, step.rateInt)
                 ok = stepOk && ok
                 RuntimeLog.appendGlobal(TAG, "STEP up set=${step.rateInt}Hz modeId=${step.modeId} ok=$stepOk")
                 try { Thread.sleep(800) } catch (e: InterruptedException) { break }
@@ -296,7 +296,7 @@ object RootUtils {
                 targetMode.width,
                 targetMode.height,
                 targetHz,
-                targetMode.modeId - 1
+                targetMode.sfIndex
             )
             ok = finalOk && ok
             RuntimeLog.appendGlobal(TAG, "STEP final target=${targetHz}Hz modeId=${targetMode.modeId} ok=$finalOk")
@@ -340,7 +340,7 @@ object RootUtils {
                 return false
             }
             Log.d(TAG, "stepping down to ${step.rateInt}Hz (modeId=${step.modeId})")
-            val stepOk = setRateDown(step.modeId, step.rateInt)
+            val stepOk = setRateDown(step, step.rateInt)
             ok = stepOk && ok
             RuntimeLog.appendGlobal(TAG, "STEP down set=${step.rateInt}Hz modeId=${step.modeId} ok=$stepOk state=${readDisplayState().summary()}")
             if (index != steps.lastIndex) {
