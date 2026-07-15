@@ -1,6 +1,5 @@
 package com.refreshrate.control.screens
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -58,10 +57,10 @@ fun HomeScreen(
     val accessibilityEnabled = isAccessibilityServiceEnabled()
     val authMode = displayData?.authMode ?: ""
 
-    Column(modifier = modifier.background(MiuixTheme.colorScheme.surface)) {
+    Column(modifier = modifier) {
         SmallTopAppBar(
             title = "屏幕刷新率",
-            color = MiuixTheme.colorScheme.surface
+            color = Color.Transparent,
         )
 
         // Status indicators row
@@ -174,7 +173,7 @@ private fun StatusCard(
     authMode: String
 ) {
     val isDark = isSystemInDarkTheme()
-    val cardBg = if (isDark) Color(0xFF1E3D2E) else Color(0xFFE8F5E9)
+    val cardBg = if (isDark) Color(0xFF1E3D2E).copy(alpha = 0.82f) else Color(0xFFE8F5E9).copy(alpha = 0.86f)
     val titleColor = if (isDark) Color.White else Color(0xFF1A1A1A)
     val subtitleColor = if (isDark) Color(0xFFD0D0D0) else Color(0xFF666666)
     val accentColor = Color(0xFF34C759)

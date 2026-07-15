@@ -5,7 +5,6 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -43,7 +42,8 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.icon.extended.VerticalSplit
-import top.yukonga.miuix.kmp.theme.MiuixTheme
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import com.refreshrate.control.effect.Os3Background
 import com.refreshrate.control.screens.HomeScreen
 import com.refreshrate.control.screens.LocalAppContext
 import com.refreshrate.control.screens.rememberAppContext
@@ -54,6 +54,7 @@ import com.refreshrate.control.screens.AppConfigScreen
 import com.refreshrate.control.screens.RuntimeLogScreen
 import com.refreshrate.control.screens.RefreshRateTestScreen
 import com.refreshrate.control.theme.RefreshRateTheme
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 sealed class SubScreen {
     data object AppList : SubScreen()
@@ -66,56 +67,70 @@ sealed class SubScreen {
 fun App() {
     RefreshRateTheme {
         val appContext = rememberAppContext()
+        var backgroundPlaying by remember { mutableStateOf(true) }
         var currentTab by remember { mutableStateOf(0) }
         val navigationStack = remember { mutableStateListOf<SubScreen>() }
+        val backdrop = rememberLayerBackdrop()
 
-        CompositionLocalProvider(LocalAppContext provides appContext) {
-            val currentSubScreen = navigationStack.lastOrNull()
+        LifecycleResumeEffect(Unit) {
+            backgroundPlaying = true
+            onPauseOrDispose { backgroundPlaying = false }
+        }
 
-            BackHandler(enabled = navigationStack.isNotEmpty() || currentTab != 0) {
-                when {
-                    navigationStack.isNotEmpty() -> navigationStack.removeAt(navigationStack.lastIndex)
-                    currentTab != 0 -> currentTab = 0
-                }
-            }
+        Os3Background(
+            playing = backgroundPlaying,
+            modifier = Modifier.fillMaxSize(),
+            backgroundModifier = Modifier.layerBackdrop(backdrop),
+        ) {
+            CompositionLocalProvider(LocalAppContext provides appContext) {
+                val currentSubScreen = navigationStack.lastOrNull()
 
-            AnimatedContent(
-                targetState = currentSubScreen,
-                transitionSpec = {
-                    if (targetState != null) {
-                        slideInHorizontally { it } togetherWith slideOutHorizontally { -it / 3 }
-                    } else {
-                        slideInHorizontally { -it / 3 } togetherWith slideOutHorizontally { it }
+                BackHandler(enabled = navigationStack.isNotEmpty() || currentTab != 0) {
+                    when {
+                        navigationStack.isNotEmpty() -> navigationStack.removeAt(navigationStack.lastIndex)
+                        currentTab != 0 -> currentTab = 0
                     }
                 }
-            ) { subScreen ->
-                when (subScreen) {
-                    null -> MainScaffold(
-                        currentTab = currentTab,
-                        onTabChange = { currentTab = it },
-                        onNavigateToAppList = { navigationStack.add(SubScreen.AppList) },
-                        onNavigateToAppConfig = { pkg, label -> navigationStack.add(SubScreen.AppConfig(pkg, label)) },
-                        onNavigateToLogs = { navigationStack.add(SubScreen.RuntimeLog) },
-                        onNavigateToRefreshTest = { navigationStack.add(SubScreen.RefreshRateTest) }
-                    )
-                    is SubScreen.AppList -> AppListScreen(
-                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
-                        onAppClick = { pkg, label ->
-                            navigationStack.removeAt(navigationStack.lastIndex)
-                            navigationStack.add(SubScreen.AppConfig(pkg, label))
+
+                AnimatedContent(
+                    targetState = currentSubScreen,
+                    transitionSpec = {
+                        if (targetState != null) {
+                            slideInHorizontally { it } togetherWith slideOutHorizontally { -it / 3 }
+                        } else {
+                            slideInHorizontally { -it / 3 } togetherWith slideOutHorizontally { it }
                         }
-                    )
-                    is SubScreen.AppConfig -> AppConfigScreen(
-                        packageName = subScreen.pkg,
-                        appLabel = subScreen.label,
-                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
-                    )
-                    SubScreen.RuntimeLog -> RuntimeLogScreen(
-                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
-                    )
-                    SubScreen.RefreshRateTest -> RefreshRateTestScreen(
-                        onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
-                    )
+                    }
+                ) { subScreen ->
+                    when (subScreen) {
+                        null -> MainScaffold(
+                            currentTab = currentTab,
+                            onTabChange = { currentTab = it },
+                            onNavigateToAppList = { navigationStack.add(SubScreen.AppList) },
+                            onNavigateToAppConfig = { pkg, label -> navigationStack.add(SubScreen.AppConfig(pkg, label)) },
+                            onNavigateToLogs = { navigationStack.add(SubScreen.RuntimeLog) },
+                            onNavigateToRefreshTest = { navigationStack.add(SubScreen.RefreshRateTest) },
+                            backdrop = backdrop,
+                        )
+                        is SubScreen.AppList -> AppListScreen(
+                            onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
+                            onAppClick = { pkg, label ->
+                                navigationStack.removeAt(navigationStack.lastIndex)
+                                navigationStack.add(SubScreen.AppConfig(pkg, label))
+                            }
+                        )
+                        is SubScreen.AppConfig -> AppConfigScreen(
+                            packageName = subScreen.pkg,
+                            appLabel = subScreen.label,
+                            onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
+                        )
+                        SubScreen.RuntimeLog -> RuntimeLogScreen(
+                            onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
+                        )
+                        SubScreen.RefreshRateTest -> RefreshRateTestScreen(
+                            onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
+                        )
+                    }
                 }
             }
         }
@@ -129,18 +144,14 @@ private fun MainScaffold(
     onNavigateToAppList: () -> Unit,
     onNavigateToAppConfig: (String, String) -> Unit,
     onNavigateToLogs: () -> Unit,
-    onNavigateToRefreshTest: () -> Unit
+    onNavigateToRefreshTest: () -> Unit,
+    backdrop: top.yukonga.miuix.kmp.blur.LayerBackdrop,
 ) {
     val items = listOf(
         NavigationItem("首页", MiuixIcons.Refresh),
         NavigationItem("应用", MiuixIcons.VerticalSplit),
         NavigationItem("设置", MiuixIcons.Settings)
     )
-    val backgroundColor = MiuixTheme.colorScheme.surface
-    val backdrop = rememberLayerBackdrop {
-        drawRect(backgroundColor)
-        drawContent()
-    }
     val isDark = isSystemInDarkTheme()
     val blurColors = BlurDefaults.blurColors(
         blendColors = listOf(
@@ -153,32 +164,24 @@ private fun MainScaffold(
     )
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(backgroundColor)
+        modifier = Modifier.fillMaxSize()
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .layerBackdrop(backdrop)
-        ) {
-            when (currentTab) {
-                0 -> HomeScreen(
-                    modifier = Modifier.fillMaxSize(),
-                    onNavigateToTab = { onTabChange(1) }
-                )
-                1 -> CustomAppScreen(
-                    modifier = Modifier.fillMaxSize(),
-                    onNavigateToAppList = onNavigateToAppList,
-                    onNavigateToAppConfig = onNavigateToAppConfig
-                )
-                2 -> SettingsScreen(
-                    modifier = Modifier.fillMaxSize(),
-                    onNavigateToLogs = onNavigateToLogs,
-                    onNavigateToRefreshTest = onNavigateToRefreshTest
-                )
+        when (currentTab) {
+            0 -> HomeScreen(
+                modifier = Modifier.fillMaxSize(),
+                onNavigateToTab = { onTabChange(1) }
+            )
+            1 -> CustomAppScreen(
+                modifier = Modifier.fillMaxSize(),
+                onNavigateToAppList = onNavigateToAppList,
+                onNavigateToAppConfig = onNavigateToAppConfig
+            )
+            2 -> SettingsScreen(
+                modifier = Modifier.fillMaxSize(),
+                onNavigateToLogs = onNavigateToLogs,
+                onNavigateToRefreshTest = onNavigateToRefreshTest
+            )
             }
-        }
 
         Box(
             modifier = Modifier

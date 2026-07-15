@@ -11,8 +11,14 @@ fun RefreshRateTheme(
     content: @Composable () -> Unit
 ) {
     val controller = remember { ThemeController(ColorSchemeMode.System) }
+    val sourceColors = controller.currentColors()
+    val colors = sourceColors.copy(
+        surfaceContainer = sourceColors.surfaceContainer.copy(
+            alpha = if (sourceColors.background.red < 0.5f) 0.74f else 0.82f,
+        ),
+    )
     MiuixTheme(
-        controller = controller,
+        colors = colors,
         content = content
     )
 }
