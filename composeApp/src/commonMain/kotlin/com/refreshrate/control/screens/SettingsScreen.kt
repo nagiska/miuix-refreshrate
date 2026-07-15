@@ -28,7 +28,8 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 fun SettingsScreen(
     modifier: Modifier = Modifier,
     onNavigateToLogs: () -> Unit = {},
-    onNavigateToRefreshTest: () -> Unit = {}
+    onNavigateToRefreshTest: () -> Unit = {},
+    onNavigateToAbout: () -> Unit = {},
 ) {
     val appContext = LocalAppContext.current
     val settingsData = loadSettingsData()
@@ -120,8 +121,8 @@ fun SettingsScreen(
         ) {
             ArrowPreference(
                 title = "关于应用",
-                summary = "Miuix Refresh Rate v1.0.0",
-                onClick = { refreshKey++ }
+                summary = "屏幕刷新率 v${getAppVersionName()}",
+                onClick = onNavigateToAbout,
             )
         }
 

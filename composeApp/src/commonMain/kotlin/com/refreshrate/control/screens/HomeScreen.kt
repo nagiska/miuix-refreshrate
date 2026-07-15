@@ -1,7 +1,6 @@
 package com.refreshrate.control.screens
 
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -282,9 +281,12 @@ private fun CustomAppCountCard(
 ) {
     Card(
         modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() },
-        cornerRadius = 20.dp
+            .fillMaxWidth(),
+        cornerRadius = 20.dp,
+        colors = CardDefaults.defaultColors(),
+        pressFeedbackType = PressFeedbackType.Sink,
+        showIndication = true,
+        onClick = onClick,
     ) {
         Row(
             modifier = Modifier

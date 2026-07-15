@@ -80,6 +80,10 @@ expect fun loadHzList(context: AppContext, resolution: String): List<Int>
 
 expect fun openAccessibilitySettings(context: AppContext)
 
+expect fun openExternalUrl(context: AppContext, url: String)
+
+expect fun getAppVersionName(): String
+
 @Composable
 expect fun loadRuntimeLogs(refreshKey: Int = 0): List<String>
 

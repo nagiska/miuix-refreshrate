@@ -36,12 +36,14 @@ import com.refreshrate.control.screens.AppListScreen
 import com.refreshrate.control.screens.AppConfigScreen
 import com.refreshrate.control.screens.RuntimeLogScreen
 import com.refreshrate.control.screens.RefreshRateTestScreen
+import com.refreshrate.control.screens.AboutScreen
 import com.refreshrate.control.theme.RefreshRateTheme
 
 sealed class SubScreen {
     data object AppList : SubScreen()
     data object RuntimeLog : SubScreen()
     data object RefreshRateTest : SubScreen()
+    data object About : SubScreen()
     data class AppConfig(val pkg: String, val label: String) : SubScreen()
 }
 
@@ -92,6 +94,7 @@ fun App() {
                             onNavigateToAppConfig = { pkg, label -> navigationStack.add(SubScreen.AppConfig(pkg, label)) },
                             onNavigateToLogs = { navigationStack.add(SubScreen.RuntimeLog) },
                             onNavigateToRefreshTest = { navigationStack.add(SubScreen.RefreshRateTest) },
+                            onNavigateToAbout = { navigationStack.add(SubScreen.About) },
                             backdrop = backdrop,
                         )
                         is SubScreen.AppList -> AppListScreen(
@@ -112,6 +115,9 @@ fun App() {
                         SubScreen.RefreshRateTest -> RefreshRateTestScreen(
                             onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
                         )
+                        SubScreen.About -> AboutScreen(
+                            onBack = { navigationStack.removeAt(navigationStack.lastIndex) }
+                        )
                     }
                 }
             }
@@ -127,6 +133,7 @@ private fun MainScaffold(
     onNavigateToAppConfig: (String, String) -> Unit,
     onNavigateToLogs: () -> Unit,
     onNavigateToRefreshTest: () -> Unit,
+    onNavigateToAbout: () -> Unit,
     backdrop: top.yukonga.miuix.kmp.blur.LayerBackdrop,
 ) {
     val items = listOf(
@@ -150,7 +157,8 @@ private fun MainScaffold(
             2 -> SettingsScreen(
                 modifier = Modifier.fillMaxSize(),
                 onNavigateToLogs = onNavigateToLogs,
-                onNavigateToRefreshTest = onNavigateToRefreshTest
+                onNavigateToRefreshTest = onNavigateToRefreshTest,
+                onNavigateToAbout = onNavigateToAbout,
             )
             }
 

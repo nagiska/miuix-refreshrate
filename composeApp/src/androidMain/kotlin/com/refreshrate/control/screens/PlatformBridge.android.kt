@@ -3,6 +3,7 @@ package com.refreshrate.control.screens
 import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.Drawable
+import android.net.Uri
 import android.provider.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -269,6 +270,20 @@ actual fun openAccessibilitySettings(context: AppContext) {
     } catch (e: Exception) {
     }
 }
+
+actual fun openExternalUrl(context: AppContext, url: String) {
+    try {
+        context.context.startActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+        )
+    } catch (e: Exception) {
+        android.util.Log.e("PlatformBridge", "openExternalUrl failed: ${e.message}")
+    }
+}
+
+actual fun getAppVersionName(): String = com.refreshrate.control.BuildConfig.VERSION_NAME
 
 @Composable
 actual fun loadRuntimeLogs(refreshKey: Int): List<String> {
