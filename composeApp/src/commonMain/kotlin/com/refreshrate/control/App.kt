@@ -8,6 +8,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -16,6 +17,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -172,24 +174,31 @@ private fun MainScaffold(
             )
             }
 
-        FloatingNavigationBar(
-            modifier = Modifier.textureBlur(
-                backdrop = backdrop,
-                shape = RoundedCornerShape(28.dp),
-                blurRadius = 36f,
-                colors = blurColors,
-            ),
-            color = Color.Transparent,
-            cornerRadius = 28.dp,
-            shadowElevation = 0.dp,
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth(),
+            contentAlignment = Alignment.BottomCenter,
         ) {
-            items.forEachIndexed { index, item ->
-                FloatingNavigationBarItem(
-                    selected = currentTab == index,
-                    onClick = { onTabChange(index) },
-                    icon = item.icon,
-                    label = item.label,
-                )
+            FloatingNavigationBar(
+                modifier = Modifier.textureBlur(
+                    backdrop = backdrop,
+                    shape = RoundedCornerShape(28.dp),
+                    blurRadius = 36f,
+                    colors = blurColors,
+                ),
+                color = Color.Transparent,
+                cornerRadius = 28.dp,
+                shadowElevation = 0.dp,
+            ) {
+                items.forEachIndexed { index, item ->
+                    FloatingNavigationBarItem(
+                        selected = currentTab == index,
+                        onClick = { onTabChange(index) },
+                        icon = item.icon,
+                        label = item.label,
+                    )
+                }
             }
         }
     }
