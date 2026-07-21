@@ -15,8 +15,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.refreshrate.control.components.BlurredBar
 import com.refreshrate.control.components.CardItem
 import com.refreshrate.control.components.groupedCardItems
+import com.refreshrate.control.components.rememberBlurBackdrop
 import com.refreshrate.control.util.horizontalCutoutPadding
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
@@ -24,6 +26,7 @@ import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TopAppBar
+import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
@@ -46,6 +49,7 @@ fun AppConfigScreen(
     var resolutions by remember { mutableStateOf<List<String>>(emptyList()) }
     var hzList by remember { mutableStateOf<List<String>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
+    val backdrop = rememberBlurBackdrop()
 
     LaunchedEffect(packageName) {
         val config = loadAppConfig(appContext, packageName)
@@ -70,15 +74,17 @@ fun AppConfigScreen(
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
-            TopAppBar(
-                title = appLabel,
-                color = Color.Transparent,
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(MiuixIcons.Back, contentDescription = "返回")
-                    }
-                },
-            )
+            BlurredBar(backdrop) {
+                TopAppBar(
+                    title = appLabel,
+                    color = Color.Transparent,
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(MiuixIcons.Back, contentDescription = "返回")
+                        }
+                    },
+                )
+            }
         },
     ) { paddingValues ->
         if (!loaded) {
@@ -90,6 +96,7 @@ fun AppConfigScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .horizontalCutoutPadding()
+                .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier)
                 .scrollEndHaptic()
                 .overScrollVertical(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(
