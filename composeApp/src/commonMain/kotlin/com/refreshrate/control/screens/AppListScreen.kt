@@ -24,10 +24,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.refreshrate.control.components.BlurredBar
 import com.refreshrate.control.components.CardItem
 import com.refreshrate.control.components.groupedCardItems
-import com.refreshrate.control.components.rememberBlurBackdrop
 import com.refreshrate.control.util.horizontalCutoutPadding
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
@@ -35,7 +33,6 @@ import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
-import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.squircle.squircleClip
@@ -56,29 +53,25 @@ fun AppListScreen(
             it.name.contains(searchText, true) || it.packageName.contains(searchText, true)
         }
     }
-    val backdrop = rememberBlurBackdrop()
 
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
-            BlurredBar(backdrop) {
-                TopAppBar(
-                    title = "选择应用",
-                    color = Color.Transparent,
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(MiuixIcons.Back, contentDescription = "返回")
-                        }
-                    },
-                )
-            }
+            TopAppBar(
+                title = "选择应用",
+                color = Color.Transparent,
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(MiuixIcons.Back, contentDescription = "返回")
+                    }
+                },
+            )
         },
     ) { paddingValues ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .horizontalCutoutPadding()
-                .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier)
                 .scrollEndHaptic()
                 .overScrollVertical(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(
