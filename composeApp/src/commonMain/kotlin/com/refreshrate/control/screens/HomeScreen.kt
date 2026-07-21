@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.refreshrate.control.model.DisplayMode
+import com.refreshrate.control.theme.StatusColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Card
@@ -40,6 +41,8 @@ import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.PressFeedbackType
+import top.yukonga.miuix.kmp.utils.overScrollVertical
+import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
 @Composable
 fun HomeScreen(
@@ -94,14 +97,14 @@ fun HomeScreen(
                     else -> "未授权"
                 },
                 style = MiuixTheme.textStyles.footnote2,
-                color = if (authMode.isNotEmpty()) Color(0xFF34C759) else Color(0xFFFF4D4F)
+                color = if (authMode.isNotEmpty()) StatusColors.healthy else StatusColors.danger
             )
             Spacer(Modifier.width(8.dp))
             // Accessibility service indicator
             Text(
                 text = if (accessibilityEnabled) "无障碍✓" else "无障碍✕",
                 style = MiuixTheme.textStyles.footnote2,
-                color = if (accessibilityEnabled) Color(0xFF34C759) else Color(0xFFFF4D4F)
+                color = if (accessibilityEnabled) StatusColors.healthy else StatusColors.danger
             )
         }
 
@@ -117,13 +120,20 @@ fun HomeScreen(
         }
 
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .scrollEndHaptic()
+                .overScrollVertical(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                start = 12.dp, end = 12.dp, top = 12.dp, bottom = 120.dp
+                top = 12.dp,
+                bottom = 120.dp,
             )
         ) {
             item {
                 StatusCard(
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp)
+                        .padding(bottom = 12.dp),
                     currentHz = displayData.currentMode?.rateInt ?: -1,
                     resolution = displayData.currentMode?.resolutionLabel ?: "未知",
                     rateName = displayData.currentMode?.rateName ?: "",
@@ -132,8 +142,10 @@ fun HomeScreen(
             }
 
             item {
-                Spacer(Modifier.height(12.dp))
                 CustomAppCountCard(
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp)
+                        .padding(bottom = 12.dp),
                     count = enabledAppCount,
                     onClick = onNavigateToTab
                 )
@@ -143,29 +155,30 @@ fun HomeScreen(
                 item {
                     SmallTitle(text = resolution)
                 }
-                item {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        modes.forEach { mode ->
-                            val isCurrent = displayData.currentMode?.let {
-                                it.width == mode.width && it.height == mode.height && it.rateInt == mode.rateInt
-                            } == true
-                            val isSwitching = switchingMode === mode
-                            RateCardItem(
-                                mode = mode,
-                                isCurrent = isCurrent,
-                                isSwitching = isSwitching,
-                                onClick = {
-                                    if (!isCurrent) {
-                                        switchingMode = mode
-                                        scope.launch {
-                                            applyDisplayMode(displayData.authMode, mode, appContext)
-                                            delay(1_000)
-                                            refreshTrigger++
-                                        }
+                modes.forEach { mode ->
+                    item(key = "${resolution}_${mode.modeId}_${mode.rateInt}") {
+                        val isCurrent = displayData.currentMode?.let {
+                            it.width == mode.width && it.height == mode.height && it.rateInt == mode.rateInt
+                        } == true
+                        val isSwitching = switchingMode === mode
+                        RateCardItem(
+                            modifier = Modifier
+                                .padding(horizontal = 12.dp)
+                                .padding(bottom = 12.dp),
+                            mode = mode,
+                            isCurrent = isCurrent,
+                            isSwitching = isSwitching,
+                            onClick = {
+                                if (!isCurrent) {
+                                    switchingMode = mode
+                                    scope.launch {
+                                        applyDisplayMode(displayData.authMode, mode, appContext)
+                                        delay(1_000)
+                                        refreshTrigger++
                                     }
-                                },
-                            )
-                        }
+                                }
+                            },
+                        )
                     }
                 }
             }
@@ -178,14 +191,15 @@ private fun StatusCard(
     currentHz: Int,
     resolution: String,
     rateName: String,
-    authMode: String
+    authMode: String,
+    modifier: Modifier = Modifier,
 ) {
     val titleColor = MiuixTheme.colorScheme.onSurfaceContainer
     val subtitleColor = MiuixTheme.colorScheme.onSurfaceVariantSummary
-    val accentColor = Color(0xFF34C759)
+    val accentColor = StatusColors.accent
 
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(200.dp),
         cornerRadius = 20.dp,
@@ -277,11 +291,11 @@ private fun StatusCard(
 @Composable
 private fun CustomAppCountCard(
     count: Int,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Card(
-        modifier = Modifier
-            .fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         cornerRadius = 20.dp,
         colors = CardDefaults.defaultColors(),
         pressFeedbackType = PressFeedbackType.Sink,
@@ -320,6 +334,7 @@ private fun RateCardItem(
     isCurrent: Boolean,
     isSwitching: Boolean,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val highlighted = isSwitching
     val color = if (highlighted) MiuixTheme.colorScheme.primaryVariant else MiuixTheme.colorScheme.surfaceContainer
@@ -327,7 +342,7 @@ private fun RateCardItem(
     val summaryColor = if (highlighted) MiuixTheme.colorScheme.onPrimaryVariant else MiuixTheme.colorScheme.onSurfaceVariantSummary
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         insideMargin = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
         colors = CardDefaults.defaultColors(color = color, contentColor = titleColor),
         pressFeedbackType = PressFeedbackType.Sink,

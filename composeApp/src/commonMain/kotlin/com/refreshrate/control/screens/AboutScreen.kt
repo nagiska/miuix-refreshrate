@@ -1,7 +1,6 @@
 package com.refreshrate.control.screens
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
@@ -85,24 +85,23 @@ fun AboutScreen(onBack: () -> Unit) {
                     color = MiuixTheme.colorScheme.onBackgroundVariant,
                 )
                 Spacer(Modifier.height(42.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    AboutLinkCard(
-                        title = "查看源码",
-                        summary = "在 GitHub 查看项目源代码",
-                        onClick = { openExternalUrl(appContext, SOURCE_URL) },
-                    )
-                    AboutLinkCard(
-                        title = "问题反馈",
-                        summary = "通过 GitHub Issues 提交问题和建议",
-                        onClick = { openExternalUrl(appContext, ISSUES_URL) },
-                    )
-                }
+                AboutLinkCard(
+                    title = "查看源码",
+                    summary = "在 GitHub 查看项目源代码",
+                    onClick = { openExternalUrl(appContext, SOURCE_URL) },
+                )
+                AboutLinkCard(
+                    title = "问题反馈",
+                    summary = "通过 GitHub Issues 提交问题和建议",
+                    onClick = { openExternalUrl(appContext, ISSUES_URL) },
+                )
             }
 
             Text(
                 text = "爱睡觉",
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
+                    .navigationBarsPadding()
                     .padding(end = 20.dp, bottom = 18.dp),
                 style = MiuixTheme.textStyles.footnote2,
                 color = MiuixTheme.colorScheme.onBackgroundVariant,
@@ -118,7 +117,9 @@ private fun AboutLinkCard(
     onClick: () -> Unit,
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 12.dp),
         colors = CardDefaults.defaultColors(),
         pressFeedbackType = PressFeedbackType.Sink,
         showIndication = true,

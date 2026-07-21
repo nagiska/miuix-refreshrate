@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -26,6 +27,8 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.overScrollVertical
+import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
 @Composable
 fun RuntimeLogScreen(onBack: () -> Unit) {
@@ -56,7 +59,7 @@ fun RuntimeLogScreen(onBack: () -> Unit) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp)
-                    .padding(bottom = 8.dp)
+                    .padding(bottom = 12.dp)
             ) {
                 ArrowPreference(
                     title = "导出日志",
@@ -74,16 +77,23 @@ fun RuntimeLogScreen(onBack: () -> Unit) {
             }
 
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .scrollEndHaptic()
+                    .overScrollVertical(),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                    start = 12.dp,
-                    end = 12.dp,
-                    bottom = 24.dp
+                    top = 0.dp,
+                    bottom = 0.dp,
                 )
             ) {
                 if (logs.isEmpty()) {
                     item {
-                        Card(modifier = Modifier.fillMaxWidth()) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp)
+                                .padding(bottom = 12.dp)
+                        ) {
                             Text(
                                 text = "暂无日志",
                                 modifier = Modifier.padding(16.dp),
@@ -96,7 +106,8 @@ fun RuntimeLogScreen(onBack: () -> Unit) {
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(bottom = 6.dp)
+                                .padding(horizontal = 12.dp)
+                                .padding(bottom = 12.dp)
                         ) {
                             Text(
                                 text = line,
@@ -107,7 +118,7 @@ fun RuntimeLogScreen(onBack: () -> Unit) {
                         }
                     }
                 }
-                item { Spacer(Modifier.height(16.dp)) }
+                item { Spacer(Modifier.height(24.dp).navigationBarsPadding()) }
             }
         }
     }

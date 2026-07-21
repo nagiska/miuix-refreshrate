@@ -8,30 +8,32 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.refreshrate.control.model.AppInfo
+import com.refreshrate.control.theme.StatusColors
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
+import top.yukonga.miuix.kmp.squircle.squircleClip
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import com.refreshrate.control.model.AppInfo
+import top.yukonga.miuix.kmp.utils.overScrollVertical
+import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
 @Composable
 fun CustomAppScreen(
@@ -77,21 +79,21 @@ fun CustomAppScreen(
             }
         )
 
-        Card(
+        TextField(
+            value = searchText,
+            onValueChange = { searchText = it },
+            label = "搜索应用",
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-        ) {
-            TextField(
-                value = searchText,
-                onValueChange = { searchText = it },
-                label = "搜索应用",
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-            )
-        }
+                .padding(horizontal = 12.dp)
+                .padding(bottom = 12.dp)
+        )
 
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .scrollEndHaptic()
+                .overScrollVertical(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 120.dp)
         ) {
             items(filteredApps, key = { it.packageName }) { app ->
@@ -101,7 +103,8 @@ fun CustomAppScreen(
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                        .padding(horizontal = 12.dp)
+                        .padding(bottom = 12.dp)
                 ) {
                     Row(
                         modifier = Modifier
@@ -110,7 +113,6 @@ fun CustomAppScreen(
                             .padding(horizontal = 16.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Lazy icon loading
                         val icon = rememberAppIcon(app.packageName)
                         if (icon != null) {
                             Image(
@@ -118,7 +120,7 @@ fun CustomAppScreen(
                                 contentDescription = app.name,
                                 modifier = Modifier
                                     .size(40.dp)
-                                    .clip(RoundedCornerShape(10.dp))
+                                    .squircleClip(10.dp)
                             )
                             Spacer(Modifier.width(12.dp))
                         }
@@ -148,7 +150,7 @@ fun CustomAppScreen(
                                     Text(
                                         text = "已配置",
                                         style = MiuixTheme.textStyles.footnote2,
-                                        color = Color(0xFF34C759)
+                                        color = StatusColors.healthy
                                     )
                                 }
                             }
@@ -162,6 +164,7 @@ fun CustomAppScreen(
                     }
                 }
             }
+            item { Spacer(Modifier.height(24.dp).navigationBarsPadding()) }
         }
     }
 }

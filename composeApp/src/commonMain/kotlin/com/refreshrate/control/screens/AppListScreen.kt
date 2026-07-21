@@ -8,12 +8,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -21,7 +21,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -34,7 +33,10 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
+import top.yukonga.miuix.kmp.squircle.squircleClip
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.overScrollVertical
+import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
 @Composable
 fun AppListScreen(
@@ -64,22 +66,21 @@ fun AppListScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            Card(
+            TextField(
+                value = searchText,
+                onValueChange = { searchText = it },
+                label = "搜索应用",
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-            ) {
-                TextField(
-                    value = searchText,
-                    onValueChange = { searchText = it },
-                    label = "搜索应用",
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-                )
-            }
+                    .padding(horizontal = 12.dp)
+                    .padding(bottom = 12.dp)
+            )
 
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp)
+                modifier = Modifier
+                    .fillMaxSize()
+                    .scrollEndHaptic()
+                    .overScrollVertical(),
             ) {
                 if (filteredApps.isEmpty()) {
                     item {
@@ -117,7 +118,7 @@ fun AppListScreen(
                                         contentDescription = app.name,
                                         modifier = Modifier
                                             .size(40.dp)
-                                            .clip(RoundedCornerShape(10.dp))
+                                            .squircleClip(10.dp)
                                     )
                                     Spacer(Modifier.width(12.dp))
                                 }
@@ -145,6 +146,7 @@ fun AppListScreen(
                         }
                     }
                 }
+                item { Spacer(Modifier.height(24.dp).navigationBarsPadding()) }
             }
         }
     }

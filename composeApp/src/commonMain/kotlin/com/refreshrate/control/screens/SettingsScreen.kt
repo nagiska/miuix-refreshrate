@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -17,12 +18,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.refreshrate.control.theme.StatusColors
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.overScrollVertical
+import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
 @Composable
 fun SettingsScreen(
@@ -47,7 +51,12 @@ fun SettingsScreen(
         }
     }
 
-    Column(modifier = modifier.verticalScroll(rememberScrollState())) {
+    Column(
+        modifier = modifier
+            .scrollEndHaptic()
+            .overScrollVertical()
+            .verticalScroll(rememberScrollState())
+    ) {
         SmallTopAppBar(
             title = "设置",
             color = Color.Transparent
@@ -65,7 +74,7 @@ fun SettingsScreen(
                 Text(
                     text = if (rootAvailable) "Root 权限: 已获取" else "Root 权限: 未获取",
                     style = MiuixTheme.textStyles.body1,
-                    color = if (rootAvailable) MiuixTheme.colorScheme.primary else Color.Red
+                    color = if (rootAvailable) StatusColors.healthy else StatusColors.danger
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
@@ -126,6 +135,6 @@ fun SettingsScreen(
             )
         }
 
-        Spacer(Modifier.height(120.dp))
+        Spacer(Modifier.height(120.dp).navigationBarsPadding())
     }
 }
