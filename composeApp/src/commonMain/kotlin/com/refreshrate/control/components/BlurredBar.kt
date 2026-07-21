@@ -18,10 +18,10 @@ fun Modifier.defaultBlurEffect(
 ): Modifier = this.textureBlur(
     backdrop = backdrop,
     shape = RectangleShape,
-    blurRadius = 18f,
+    blurRadius = 25f,
     colors = BlurColors(
         blendColors = listOf(
-            BlendColorEntry(color = MiuixTheme.colorScheme.surface.copy(alpha = 0.18f)),
+            BlendColorEntry(color = MiuixTheme.colorScheme.surface.copy(alpha = 0.72f)),
         ),
     ),
 )
@@ -29,7 +29,11 @@ fun Modifier.defaultBlurEffect(
 @Composable
 fun rememberBlurBackdrop(): LayerBackdrop? {
     if (!isRuntimeShaderSupported()) return null
-    return rememberLayerBackdrop()
+    val surfaceColor = MiuixTheme.colorScheme.surface
+    return rememberLayerBackdrop {
+        drawRect(surfaceColor)
+        drawContent()
+    }
 }
 
 @Composable

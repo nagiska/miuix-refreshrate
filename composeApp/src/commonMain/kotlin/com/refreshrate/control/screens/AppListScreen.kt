@@ -57,6 +57,7 @@ fun AppListScreen(
         }
     }
     val backdrop = rememberBlurBackdrop()
+    val barColor = if (backdrop != null) Color.Transparent else MiuixTheme.colorScheme.surface
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -64,7 +65,7 @@ fun AppListScreen(
             BlurredBar(backdrop) {
                 TopAppBar(
                     title = "选择应用",
-                    color = Color.Transparent,
+                    color = barColor,
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(MiuixIcons.Back, contentDescription = "返回")
