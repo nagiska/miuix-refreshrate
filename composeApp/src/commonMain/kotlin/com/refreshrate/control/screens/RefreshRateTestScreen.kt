@@ -32,10 +32,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.unit.dp
-import com.refreshrate.control.components.BlurredBar
-import com.refreshrate.control.components.rememberBlurBackdrop
 import com.refreshrate.control.theme.StatusColors
-import com.refreshrate.control.util.horizontalCutoutPadding
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import top.yukonga.miuix.kmp.basic.Card
@@ -45,7 +42,6 @@ import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TopAppBar
-import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -125,34 +121,27 @@ fun RefreshRateTestScreen(onBack: () -> Unit) {
         }
     }
 
-    val backdrop = rememberBlurBackdrop()
-    val barColor = if (backdrop != null) Color.Transparent else MiuixTheme.colorScheme.surface
-
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
-            BlurredBar(backdrop) {
-                TopAppBar(
-                    title = "实时刷新率检测",
-                    color = barColor,
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(MiuixIcons.Back, contentDescription = "返回")
-                        }
-                    },
-                )
-            }
-        },
+            TopAppBar(
+                title = "实时刷新率检测",
+                color = Color.Transparent,
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(MiuixIcons.Back, contentDescription = "返回")
+                    }
+                }
+            )
+        }
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .horizontalCutoutPadding()
-                .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier)
                 .padding(paddingValues)
                 .scrollEndHaptic()
                 .overScrollVertical()
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(rememberScrollState())
         ) {
             Card(
                 modifier = Modifier
