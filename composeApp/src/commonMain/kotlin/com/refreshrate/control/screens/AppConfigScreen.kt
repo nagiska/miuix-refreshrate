@@ -50,7 +50,6 @@ fun AppConfigScreen(
     var hzList by remember { mutableStateOf<List<String>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
     val backdrop = rememberBlurBackdrop()
-    val barColor = if (backdrop != null) Color.Transparent else MiuixTheme.colorScheme.surface
 
     LaunchedEffect(packageName) {
         val config = loadAppConfig(appContext, packageName)
@@ -78,7 +77,7 @@ fun AppConfigScreen(
             BlurredBar(backdrop) {
                 TopAppBar(
                     title = appLabel,
-                    color = barColor,
+                    color = Color.Transparent,
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(MiuixIcons.Back, contentDescription = "返回")

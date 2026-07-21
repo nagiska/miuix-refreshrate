@@ -41,7 +41,6 @@ fun AboutScreen(onBack: () -> Unit) {
     val appContext = LocalAppContext.current
     val appIcon = rememberAppIcon("com.refreshrate.control")
     val backdrop = rememberBlurBackdrop()
-    val barColor = if (backdrop != null) Color.Transparent else MiuixTheme.colorScheme.surface
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -49,7 +48,7 @@ fun AboutScreen(onBack: () -> Unit) {
             BlurredBar(backdrop) {
                 TopAppBar(
                     title = "关于应用",
-                    color = barColor,
+                    color = Color.Transparent,
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(MiuixIcons.Back, contentDescription = "返回")

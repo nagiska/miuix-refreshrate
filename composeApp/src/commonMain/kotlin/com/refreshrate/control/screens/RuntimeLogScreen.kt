@@ -39,7 +39,6 @@ fun RuntimeLogScreen(onBack: () -> Unit) {
     var refreshKey by remember { mutableIntStateOf(0) }
     val logs = loadRuntimeLogs(refreshKey)
     val backdrop = rememberBlurBackdrop()
-    val barColor = if (backdrop != null) Color.Transparent else MiuixTheme.colorScheme.surface
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -47,7 +46,7 @@ fun RuntimeLogScreen(onBack: () -> Unit) {
             BlurredBar(backdrop) {
                 TopAppBar(
                     title = "运行日志",
-                    color = barColor,
+                    color = Color.Transparent,
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(MiuixIcons.Back, contentDescription = "返回")

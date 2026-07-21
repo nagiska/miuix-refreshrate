@@ -126,7 +126,6 @@ fun RefreshRateTestScreen(onBack: () -> Unit) {
     }
 
     val backdrop = rememberBlurBackdrop()
-    val barColor = if (backdrop != null) Color.Transparent else MiuixTheme.colorScheme.surface
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -134,7 +133,7 @@ fun RefreshRateTestScreen(onBack: () -> Unit) {
             BlurredBar(backdrop) {
                 TopAppBar(
                     title = "实时刷新率检测",
-                    color = barColor,
+                    color = Color.Transparent,
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(MiuixIcons.Back, contentDescription = "返回")
