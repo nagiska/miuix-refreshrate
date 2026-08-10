@@ -25,6 +25,9 @@ jobs:
         with:
           validate-wrappers: false
 
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest
+
       - name: Build debug APK
         run: ./gradlew assembleDebug
 

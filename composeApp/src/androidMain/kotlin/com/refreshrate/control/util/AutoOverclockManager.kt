@@ -22,10 +22,9 @@ object AutoOverclockManager {
 
                     val seen = mutableSetOf<String>()
                     displayModes.mapIndexed { i, m ->
-                        val key = "${m.physicalWidth}x${m.physicalHeight}@${m.refreshRate.toInt()}"
+                        val key = "${m.physicalWidth}x${m.physicalHeight}@${m.refreshRate}"
                         if (seen.add(key)) {
                             val dm2 = DisplayMode(m.physicalWidth, m.physicalHeight, m.refreshRate, m.modeId)
-                            dm2.sfIndex = m.modeId - 1
                             dm2
                         } else null
                     }.filterNotNull()
@@ -44,10 +43,9 @@ object AutoOverclockManager {
 
                 val seen = mutableSetOf<String>()
                 return normalizeModes(displayModes.map { m ->
-                    val key = "${m.physicalWidth}x${m.physicalHeight}@${m.refreshRate.toInt()}"
+                    val key = "${m.physicalWidth}x${m.physicalHeight}@${m.refreshRate}"
                     if (seen.add(key)) {
                         val dm2 = DisplayMode(m.physicalWidth, m.physicalHeight, m.refreshRate, m.modeId)
-                        dm2.sfIndex = m.modeId - 1
                         dm2
                     } else null
                 }.filterNotNull())
@@ -67,7 +65,7 @@ object AutoOverclockManager {
     private fun normalizeModes(modes: List<DisplayMode>): List<DisplayMode> {
         return modes
             .filter { it.width > 0 && it.height > 0 && it.rateInt in 30..300 }
-            .distinctBy { Triple(it.width, it.height, it.rateInt) }
+            .distinctBy { Triple(it.width, it.height, it.refreshRate) }
             .sortedWith(compareBy<DisplayMode> { it.width }.thenBy { it.height }.thenBy { it.rateInt })
     }
 
@@ -87,9 +85,7 @@ object AutoOverclockManager {
                         state.activeHeight ?: androidMode.physicalHeight,
                         actualHz.toFloat(),
                         modeId
-                    ).apply {
-                        sfIndex = modeId - 1
-                    }
+                    )
                 }
             }
         } catch (e: Exception) {

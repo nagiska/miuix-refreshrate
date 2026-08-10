@@ -1,6 +1,10 @@
 package com.refreshrate.control.util
 
 import android.util.Log
+import com.refreshrate.control.core.ModeSpec
+import com.refreshrate.control.core.RefreshEvidence
+import com.refreshrate.control.core.RefreshPlan
+import com.refreshrate.control.core.SwitchDirection
 import com.refreshrate.control.model.DisplayMode
 import java.io.BufferedReader
 import java.io.DataOutputStream
@@ -41,19 +45,37 @@ object RootUtils {
                 peakHz != null || minHz != null || miuiHz != null
         }
 
+        /** rendered/measured fps 仅作诊断提示,不再是匹配硬否决条件。 */
         fun hasHighRateContradiction(targetHz: Int): Boolean {
             val tolerance = maxOf(6, targetHz / 20)
             return renderedFps != null && renderedFps > targetHz + tolerance
         }
 
+        fun toEvidenceSnapshot(): RefreshEvidence.Snapshot {
+            return RefreshEvidence.Snapshot(
+                activeModeId = activeModeId,
+                activeWidth = activeWidth,
+                activeHeight = activeHeight,
+                activeHz = activeHz,
+                physicalHz = physicalHz,
+                driverHz = driverHz,
+                preferredHz = preferredHz,
+                userHz = userHz,
+                peakHz = peakHz,
+                minHz = minHz,
+                miuiHz = miuiHz,
+                renderedFps = renderedFps,
+                hasEvidence = hasRefreshEvidence()
+            )
+        }
+
+        /** 按完整目标 mode(宽高+Hz)验证,renderedFps 仅诊断。 */
+        fun matchesMode(width: Int, height: Int, hz: Int): RefreshEvidence.EvidenceResult {
+            return RefreshEvidence.matchesMode(toEvidenceSnapshot(), width, height, hz)
+        }
+
         fun matchesTarget(targetHz: Int): Boolean {
-            if (hasHighRateContradiction(targetHz)) return false
-            if (driverHz != null) return hzMatches(driverHz, targetHz)
-            if (activeHz != null) return hzMatches(activeHz, targetHz)
-            if (physicalHz != null) return hzMatches(physicalHz, targetHz)
-            if (preferredHz != null) return hzMatches(preferredHz, targetHz)
-            val settings = listOfNotNull(userHz, peakHz, minHz, miuiHz)
-            return settings.isNotEmpty() && settings.all { hzMatches(it, targetHz) }
+            return RefreshEvidence.matchesTarget(toEvidenceSnapshot(), targetHz)
         }
 
         fun summary(): String {
@@ -137,11 +159,10 @@ object RootUtils {
             val id = match.groupValues[1].toIntOrNull() ?: continue
             val w = match.groupValues[2].toIntOrNull() ?: continue
             val h = match.groupValues[3].toIntOrNull() ?: continue
-            val fps = match.groupValues[4].toFloatOrNull()?.roundToInt() ?: continue
-            if (fps in 30..300) {
-                val dm = DisplayMode(w, h, fps.toFloat(), id)
-                dm.sfIndex = id - 1
-                modes.add(dm)
+            // 保留原始浮点速率(59.94/60.0 不得合并);sfIndex 不猜测,仅已验证设备显式设置
+            val fps = match.groupValues[4].toFloatOrNull() ?: continue
+            if (fps in 30f..300f) {
+                modes.add(DisplayMode(w, h, fps, id))
             }
         }
         return modes.sortedBy { it.rateInt }
@@ -158,7 +179,6 @@ object RootUtils {
             appendLine("settings put system min_refresh_rate ${targetHz}.0")
             appendLine("settings put system user_refresh_rate $targetHz")
             appendLine("settings put secure miui_refresh_rate $targetHz")
-            appendLine("settings put system thermal_limit_refresh_rate $targetHz 2>/dev/null")
         }
         val result = execRootDetailed(script.trimEnd(), "setRate:${targetHz}Hz modeId=${mode?.modeId ?: "none"} sfIndex=${sfIndex ?: "none"}")
         Log.d(TAG, "setRate result: ${result.ok}")
@@ -170,7 +190,6 @@ object RootUtils {
         Log.d(TAG, "setRateDown: modeId=${mode?.modeId}, hz=$targetHz, sfIndex=$sfIndex")
         val script = buildString {
             // Reverse the working upshift order so min never remains above peak.
-            appendLine("settings put system thermal_limit_refresh_rate $targetHz 2>/dev/null")
             appendLine("settings put secure miui_refresh_rate $targetHz")
             appendLine("settings put system user_refresh_rate $targetHz")
             appendLine("settings put system min_refresh_rate ${targetHz}.0")
@@ -206,7 +225,6 @@ object RootUtils {
             appendLine("settings put system min_refresh_rate ${hz}.0")
             appendLine("settings put system user_refresh_rate $hz")
             appendLine("settings put secure miui_refresh_rate $hz")
-            appendLine("settings put system thermal_limit_refresh_rate $hz 2>/dev/null")
             if (sfIndex >= 0) {
                 appendLine("service call SurfaceFlinger 1035 i32 $sfIndex")
             }
@@ -263,92 +281,80 @@ object RootUtils {
         return switchRefreshRate(targetMode, allModes, currentHz, isCancelled)
     }
 
+    /**
+     * 统一切换流程:升档、降档、同档都按 RefreshPlan 生成步进,
+     * 并在未取消时对目标 DisplayMode 做一次完整最终提交
+     * (preferred mode + 必要 settings + 受控 SF fallback),记录目标 modeId。
+     */
     fun switchRefreshRate(targetMode: DisplayMode, allModes: List<DisplayMode>, currentHz: Int, isCancelled: () -> Boolean = { false }): Boolean {
         val targetHz = targetMode.rateInt
+        val plan = RefreshPlan.plan(
+            target = targetMode.toModeSpec(),
+            allModes = allModes.map { it.toModeSpec() },
+            currentHz = currentHz
+        )
         var ok = true
-        if (currentHz < targetHz) {
-            val steps = allModes
-                .filter { it.width == targetMode.width && it.height == targetMode.height }
-                .filter { it.rateInt > currentHz && it.rateInt <= targetHz }
-                .sortedBy { it.rateInt }
-            Log.d(TAG, "steppedSwitch: currentHz=$currentHz → targetHz=$targetHz, res=${targetMode.width}x${targetMode.height}, steps=${steps.map { it.rateInt }}")
-            RuntimeLog.appendGlobal(TAG, "STEP up current=${currentHz}Hz target=${targetHz}Hz steps=${steps.map { it.rateInt }}")
-            for (step in steps) {
-                if (isCancelled()) {
-                    Log.d(TAG, "steppedSwitch cancelled at ${step.rateInt}Hz")
-                    RuntimeLog.appendGlobal(TAG, "STEP up cancelled at=${step.rateInt}Hz target=${targetHz}Hz")
-                    return false
-                }
-                Log.d(TAG, "stepping to ${step.rateInt}Hz (modeId=${step.modeId})")
-                val stepOk = setRate(step, step.rateInt)
-                ok = stepOk && ok
-                RuntimeLog.appendGlobal(TAG, "STEP up set=${step.rateInt}Hz modeId=${step.modeId} ok=$stepOk")
-                try { Thread.sleep(800) } catch (e: InterruptedException) { break }
+        Log.d(
+            TAG,
+            "switchRefreshRate: direction=${plan.direction} currentHz=$currentHz → targetHz=$targetHz, " +
+                "res=${targetMode.width}x${targetMode.height}, steps=${plan.steps.map { it.rateInt }}"
+        )
+        RuntimeLog.appendGlobal(
+            TAG,
+            "STEP ${plan.direction} current=${currentHz}Hz target=${targetHz}Hz steps=${plan.steps.map { it.rateInt }}"
+        )
+        for (stepSpec in plan.steps) {
+            if (isCancelled()) {
+                Log.d(TAG, "switchRefreshRate cancelled at ${stepSpec.rateInt}Hz")
+                RuntimeLog.appendGlobal(TAG, "STEP ${plan.direction} cancelled at=${stepSpec.rateInt}Hz target=${targetHz}Hz")
+                return false
             }
-        } else if (currentHz > targetHz) {
-            ok = steppedDecrease(allModes, currentHz, targetHz, isCancelled, targetMode) && ok
-        } else {
-            Log.d(TAG, "direct switch to ${targetHz}Hz (modeId=${targetMode.modeId})")
-            RuntimeLog.appendGlobal(TAG, "STEP direct target=${targetHz}Hz modeId=${targetMode.modeId}")
+            val stepMode = allModes.firstOrNull { it.modeId == stepSpec.modeId } ?: targetMode
+            val stepOk = if (plan.direction == SwitchDirection.UP) {
+                setRate(stepMode, stepMode.rateInt)
+            } else {
+                setRateDown(stepMode, stepMode.rateInt)
+            }
+            ok = stepOk && ok
+            RuntimeLog.appendGlobal(TAG, "STEP ${plan.direction} set=${stepMode.rateInt}Hz modeId=${stepMode.modeId} ok=$stepOk")
+            if (!RefreshSwitchCoordinator.sleepMillis(800) { isCancelled() }) {
+                RuntimeLog.appendGlobal(TAG, "STEP ${plan.direction} cancelled at=${stepMode.rateInt}Hz target=${targetHz}Hz")
+                return false
+            }
         }
-        if (currentHz <= targetHz && !isCancelled()) {
-            val finalOk = setDisplayMode(
-                targetMode.width,
-                targetMode.height,
-                targetHz,
-                targetMode.sfIndex
-            )
+        // 最终提交:升档、降档、同档都在未取消时对目标做一次完整提交
+        if (!isCancelled()) {
+            val finalOk = commitTargetMode(targetMode, targetHz)
             ok = finalOk && ok
-            RuntimeLog.appendGlobal(TAG, "STEP final target=${targetHz}Hz modeId=${targetMode.modeId} ok=$finalOk")
+            RuntimeLog.appendGlobal(
+                TAG,
+                "STEP final target=${targetHz}Hz modeId=${targetMode.modeId} width=${targetMode.width} height=${targetMode.height} ok=$finalOk"
+            )
         }
         Log.d(TAG, "switchRefreshRate complete: target=${targetHz}Hz ok=$ok")
         return ok
     }
 
-    fun steppedDecrease(allModes: List<DisplayMode>, currentHz: Int, targetHz: Int, isCancelled: () -> Boolean = { false }, targetMode: DisplayMode? = null): Boolean {
-        if (currentHz <= targetHz) return true
-        var ok = true
-        val resFilter = if (targetMode != null) {
-            allModes.filter { it.width == targetMode.width && it.height == targetMode.height }
-        } else {
-            allModes
-        }
-        val stepModes = if (targetMode != null) {
-            (resFilter + targetMode).distinctBy { Triple(it.width, it.height, it.rateInt) }
-        } else {
-            resFilter
-        }
-        val steps = stepModes
-            .filter { it.rateInt in targetHz until currentHz }
-            .sortedByDescending { it.rateInt }
-        Log.d(TAG, "steppedDecrease: currentHz=$currentHz → targetHz=$targetHz, steps=${steps.map { it.rateInt }}")
-        RuntimeLog.appendGlobal(TAG, "STEP down current=${currentHz}Hz target=${targetHz}Hz steps=${steps.map { it.rateInt }}")
-        if (isCancelled()) return false
-        if (targetMode != null) {
-            val preferredOk = setPreferredMode(targetMode.width, targetMode.height, targetMode.rateInt)
-            ok = preferredOk && ok
-            RuntimeLog.appendGlobal(
-                TAG,
-                "STEP down preferred=${targetMode.rateInt}Hz modeId=${targetMode.modeId} " +
-                    "ok=$preferredOk state=${readDisplayState().summary()}"
-            )
-            try { Thread.sleep(800) } catch (e: InterruptedException) { return false }
-        }
-        for ((index, step) in steps.withIndex()) {
-            if (isCancelled()) {
-                RuntimeLog.appendGlobal(TAG, "STEP down cancelled at=${step.rateInt}Hz target=${targetHz}Hz")
-                return false
-            }
-            Log.d(TAG, "stepping down to ${step.rateInt}Hz (modeId=${step.modeId})")
-            val stepOk = setRateDown(step, step.rateInt)
-            ok = stepOk && ok
-            RuntimeLog.appendGlobal(TAG, "STEP down set=${step.rateInt}Hz modeId=${step.modeId} ok=$stepOk state=${readDisplayState().summary()}")
-            if (index != steps.lastIndex) {
-                try { Thread.sleep(800) } catch (e: InterruptedException) { return false }
+    /**
+     * 对目标 DisplayMode 做一次完整最终提交:
+     * preferred mode + 必要 settings + 受控的 SF fallback(仅已验证设备,sfIndex >= 0)。
+     */
+    private fun commitTargetMode(targetMode: DisplayMode, targetHz: Int): Boolean {
+        val sfIndex = targetMode.sfIndex.takeIf { it >= 0 }
+        val script = buildString {
+            appendLine("cmd display set-user-preferred-display-mode ${targetMode.width} ${targetMode.height} $targetHz")
+            appendLine("settings put system peak_refresh_rate ${targetHz}.0")
+            appendLine("settings put system min_refresh_rate ${targetHz}.0")
+            appendLine("settings put system user_refresh_rate $targetHz")
+            appendLine("settings put secure miui_refresh_rate $targetHz")
+            if (sfIndex != null) {
+                appendLine("service call SurfaceFlinger 1035 i32 $sfIndex")
             }
         }
-        RuntimeLog.appendGlobal(TAG, "STEP down complete source=${currentHz}Hz target=${targetHz}Hz ok=$ok")
-        return ok
+        return execRootDetailed(
+            script.trimEnd(),
+            "commitTarget:${targetMode.width}x${targetMode.height}@${targetHz}Hz modeId=${targetMode.modeId} sfIndex=${sfIndex ?: "none"}"
+        ).ok
     }
 
     fun findBestTargetForHz(allModes: List<DisplayMode>, currentMode: DisplayMode?, targetHz: Int): DisplayMode? {

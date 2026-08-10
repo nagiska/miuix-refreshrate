@@ -22,6 +22,7 @@ import com.refreshrate.control.BuildConfig
 import com.refreshrate.control.MainActivity
 import com.refreshrate.control.model.DisplayMode
 import com.refreshrate.control.util.AutoOverclockManager
+import com.refreshrate.control.util.RefreshSwitchCoordinator
 import com.refreshrate.control.util.RootUtils
 import com.refreshrate.control.util.RuntimeLog
 
@@ -55,26 +56,27 @@ class KeepAliveAccessibilityService : AccessibilityService() {
     private var restoreMode: DisplayMode? = null
     private var restoreHz: Int = -1
     private var restoreSourceHz: Int = -1
-    private var switchThread: Thread? = null
     private var foregroundStarted: Boolean = false
     private var lastPollHeartbeatAt: Long = 0L
     private var lastForegroundConflict: String = ""
     private var lastForegroundConflictAt: Long = 0L
     private val switchStateLock = Any()
-    @Volatile private var switchGeneration: Long = 0L
     @Volatile private var restoreInProgress: Boolean = false
     @Volatile private var restoreWatchdogActive: Boolean = false
     @Volatile private var restoreWatchdogGeneration: Long = -1L
     private var restoringToPackage: String = ""
     private data class RefreshVerification(
         val targetHz: Int,
+        val targetWidth: Int?,
+        val targetHeight: Int?,
         val androidHz: Int,
         val rootState: RootUtils.DisplayState,
         val matched: Boolean,
         val source: String
     ) {
         fun summary(): String {
-            return "target=${targetHz}Hz android=${androidHz}Hz source=$source matched=$matched " +
+            val modeLabel = if (targetWidth != null && targetHeight != null) "${targetWidth}x${targetHeight}@" else ""
+            return "target=${modeLabel}${targetHz}Hz android=${androidHz}Hz source=$source matched=$matched " +
                 "contradicted=${rootState.hasHighRateContradiction(targetHz)} root={${rootState.summary()}}"
         }
     }
@@ -215,9 +217,9 @@ class KeepAliveAccessibilityService : AccessibilityService() {
             TAG,
             "applyForPackage base=$basePkg effective=$effectivePkg enabled=$enabled " +
                 "custom=${prefs.getBoolean("custom_app_refresh", false)} " +
-                "lastApplied=$lastAppliedConfig restore=${restoreMode?.resolutionLabel}@${restoreHz}Hz gen=$switchGeneration"
+                "lastApplied=$lastAppliedConfig restore=${restoreMode?.resolutionLabel}@${restoreHz}Hz gen=${RefreshSwitchCoordinator.currentGeneration()}"
         )
-        runtimeLog("STATE last=$lastAppliedConfig restore=${restoreMode?.resolutionLabel}@${restoreHz}Hz gen=$switchGeneration")
+        runtimeLog("STATE last=$lastAppliedConfig restore=${restoreMode?.resolutionLabel}@${restoreHz}Hz gen=${RefreshSwitchCoordinator.currentGeneration()}")
 
         if (!enabled) {
             val savedConfig = prefs.getString(KEY_LAST_APPLIED_CONFIG, "") ?: ""
@@ -230,21 +232,28 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                     return
                 }
                 if (restoreInProgress) {
-                    Log.i(TAG, "恢复中，忽略重复未配置应用事件 base=$basePkg effective=$effectivePkg gen=$switchGeneration")
-                    runtimeLog("恢复中，忽略重复未配置应用事件 base=$basePkg effective=$effectivePkg gen=$switchGeneration")
+                    Log.i(TAG, "恢复中，忽略重复未配置应用事件 base=$basePkg effective=$effectivePkg gen=${RefreshSwitchCoordinator.currentGeneration()}")
+                    runtimeLog("恢复中，忽略重复未配置应用事件 base=$basePkg effective=$effectivePkg gen=${RefreshSwitchCoordinator.currentGeneration()}")
                     return
                 }
                 Log.i(TAG, "离开已配置应用 $effectivePkg，恢复进入前刷新率")
                 runtimeLog("RESTORE start target=${restoreMode?.resolutionLabel}@${restoreHz}Hz")
                 prefs.edit().remove(KEY_LAST_APPLIED_CONFIG).apply()
                 lastAppliedConfig = ""
-                val generation = nextSwitchGeneration()
-                restoreInProgress = true
-                restoringToPackage = effectivePkg
-                switchThread = Thread {
+                RefreshSwitchCoordinator.submit("restore") { gen, _ ->
+                    // 置位与 finally 重置同线程化,避免跨线程交错吞掉新任务标志
+                    restoreInProgress = true
+                    restoringToPackage = effectivePkg
                     withSwitchWakeLock("restore") {
                     try {
-                        val targetHz = restoreHz.takeIf { it > 0 } ?: 120
+                        val targetHz = restoreHz.takeIf { it > 0 }
+                        if (targetHz == null) {
+                            // 没有可信 baseline:不得硬编码回 120,清除 preferred 交还系统 adaptive
+                            runtimeLog("RESTORE noBaseline clearPreferred adaptive")
+                            RootUtils.restoreAdaptive(0, 0)
+                            clearRestoreStateIfCurrent(prefs, gen)
+                            return@withSwitchWakeLock
+                        }
                         val currentHz = AutoOverclockManager.getCurrentRefreshRate(this)
                         val transitionSourceHz = restoreSourceHz.takeIf { it > 0 } ?: currentHz
                         val allModes = cachedModes.ifEmpty { AutoOverclockManager.getSupportedModes(this) }
@@ -253,7 +262,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                         var restored = false
                         var lastVerification: RefreshVerification? = null
                         runtimeLog(
-                            "RESTORE prepare gen=$generation target=${restoreMode?.resolutionLabel}@${targetHz}Hz " +
+                            "RESTORE prepare gen=$gen target=${restoreMode?.resolutionLabel}@${targetHz}Hz " +
                                 "apiCurrent=${currentHz}Hz source=${transitionSourceHz}Hz " +
                                 "root=${RootUtils.readDisplayState().summary()} modes=${allModes.size}"
                         )
@@ -262,13 +271,13 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                             Log.w(TAG, "模式列表为空，仅设置 settings 恢复到 ${targetHz}Hz")
                             runtimeLog("RESTORE noModes target=${targetHz}Hz")
                             for (attempt in 1..SWITCH_RETRY_COUNT) {
-                                if (isSwitchCancelled(generation)) break
+                                if (isSwitchCancelled(gen)) break
                                 val ok = if (transitionSourceHz > targetHz) {
                                     RootUtils.setRateDown(null, targetHz)
                                 } else {
                                     RootUtils.setRate(null, targetHz)
                                 }
-                                val verification = waitForRefreshRate(targetHz, VERIFY_TIMEOUT_MS, "restore#$attempt", generation)
+                                val verification = waitForRefreshRate(targetHz, null, VERIFY_TIMEOUT_MS, "restore#$attempt", gen)
                                 lastVerification = verification
                                 runtimeLog("VERIFY restore attempt=$attempt setRateOk=$ok ${verification.summary()}")
                                 if (verification.matched) {
@@ -293,19 +302,19 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                                         "apiCurrent=${currentHz}Hz currentMode=${currentMode?.resolutionLabel}@${currentMode?.rateInt}Hz"
                                 )
                                 val steppedOk = RootUtils.switchRefreshRate(target, allModes, transitionSourceHz) {
-                                    isSwitchCancelled(generation)
+                                    isSwitchCancelled(gen)
                                 }
-                                runtimeLog("RESTORE stepped ok=$steppedOk gen=$generation state=${RootUtils.readDisplayState().summary()}")
+                                runtimeLog("RESTORE stepped ok=$steppedOk gen=$gen state=${RootUtils.readDisplayState().summary()}")
                                 for (attempt in 1..SWITCH_RETRY_COUNT) {
-                                    if (isSwitchCancelled(generation)) break
+                                    if (isSwitchCancelled(gen)) break
                                     val reapplyOk = if (attempt == 1) {
                                         steppedOk
                                     } else {
                                         RootUtils.switchRefreshRate(target, allModes, transitionSourceHz) {
-                                            isSwitchCancelled(generation)
+                                            isSwitchCancelled(gen)
                                         }
                                     }
-                                    val verification = waitForRefreshRate(restoreTargetHz, VERIFY_TIMEOUT_MS, "restore#$attempt", generation)
+                                    val verification = waitForRefreshRate(restoreTargetHz, restoreTargetMode, VERIFY_TIMEOUT_MS, "restore#$attempt", gen)
                                     lastVerification = verification
                                     runtimeLog("VERIFY restore attempt=$attempt reapplyOk=$reapplyOk ${verification.summary()}")
                                     if (verification.matched) {
@@ -318,13 +327,13 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                                 Log.w(TAG, "未找到恢复模式，仅设置 settings 恢复到 ${targetHz}Hz")
                                 runtimeLog("RESTORE noTarget settingsOnly target=${targetHz}Hz")
                                 for (attempt in 1..SWITCH_RETRY_COUNT) {
-                                    if (isSwitchCancelled(generation)) break
+                                    if (isSwitchCancelled(gen)) break
                                     val ok = if (transitionSourceHz > targetHz) {
                                         RootUtils.setRateDown(null, targetHz)
                                     } else {
                                         RootUtils.setRate(null, targetHz)
                                     }
-                                    val verification = waitForRefreshRate(targetHz, VERIFY_TIMEOUT_MS, "restoreSettings#$attempt", generation)
+                                    val verification = waitForRefreshRate(targetHz, null, VERIFY_TIMEOUT_MS, "restoreSettings#$attempt", gen)
                                     lastVerification = verification
                                     runtimeLog("VERIFY restoreSettings attempt=$attempt setRateOk=$ok ${verification.summary()}")
                                     if (verification.matched) {
@@ -335,18 +344,18 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                                 }
                             }
                         }
-                        if (!isSwitchCancelled(generation)) {
+                        if (!isSwitchCancelled(gen)) {
                             runtimeLog("SNAPSHOT restore final ${RootUtils.readDisplaySnapshot()}")
                             if (restored) {
-                                if (generation == switchGeneration) {
+                                if (gen == RefreshSwitchCoordinator.currentGeneration()) {
                                     runtimeLog("RESTORE success target=${restoreTargetHz}Hz ${lastVerification?.summary().orEmpty()}")
                                     if (restoreTargetMode != null) {
-                                        scheduleRestoreWatchdog(restoreTargetMode, transitionSourceHz, generation)
+                                        scheduleRestoreWatchdog(restoreTargetMode, transitionSourceHz, gen)
                                     } else {
-                                        clearRestoreStateIfCurrent(prefs, generation)
+                                        clearRestoreStateIfCurrent(prefs, gen)
                                     }
                                 } else {
-                                    runtimeLog("RESTORE cancelled before commit gen=$generation currentGen=$switchGeneration")
+                                    runtimeLog("RESTORE cancelled before commit gen=$gen currentGen=${RefreshSwitchCoordinator.currentGeneration()}")
                                 }
                             } else {
                                 runtimeLog(
@@ -359,13 +368,13 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                         Log.e(TAG, "恢复失败: ${e.message}")
                         runtimeLog("RESTORE failed=${e.message}")
                     } finally {
-                        if (!isSwitchCancelled(generation)) {
-                            restoreInProgress = false
-                            restoringToPackage = ""
-                        }
+                        // coordinator 串行执行保证旧任务 finally 先于新任务执行,
+                        // 新任务在队列内才置 restoreInProgress,无覆盖窗口;无条件重置避免悬挂
+                        restoreInProgress = false
+                        restoringToPackage = ""
                     }
                     }
-                }.apply { start() }
+                }
             }
             return
         }
@@ -396,7 +405,6 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                 restoreWatchdogActive = false
                 restoreWatchdogGeneration = -1L
             }
-            val generation = nextSwitchGeneration()
             if (restoreMode == null) {
                 restoreMode = AutoOverclockManager.getCurrentMode(this)
                 restoreHz = restoreMode?.rateInt ?: AutoOverclockManager.getCurrentRefreshRate(this)
@@ -411,9 +419,9 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                 .apply()
             restoreInProgress = false
             restoringToPackage = ""
-            switchThread = Thread {
+            RefreshSwitchCoordinator.submit("apply-fallback") { gen, _ ->
                 withSwitchWakeLock("apply-fallback") {
-                    if (!isSwitchCancelled(generation)) {
+                    if (!isSwitchCancelled(gen)) {
                         val currentHz = AutoOverclockManager.getCurrentRefreshRate(this)
                         val ok = if (currentHz > requestedHz) {
                             RootUtils.setRateDown(null, requestedHz)
@@ -422,19 +430,20 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                         }
                         val verification = waitForRefreshRate(
                             requestedHz,
+                            null,
                             VERIFY_TIMEOUT_MS,
                             "applyFallback",
-                            generation
+                            gen
                         )
                         runtimeLog("APPLY fallback target=${requestedHz}Hz ok=$ok ${verification.summary()}")
-                        if (!verification.matched && generation == switchGeneration && lastAppliedConfig == fallbackKey) {
+                        if (!verification.matched && isSwitchCancelled(gen) == false && lastAppliedConfig == fallbackKey) {
                             lastAppliedConfig = ""
                             prefs.edit().remove(KEY_LAST_APPLIED_CONFIG).apply()
                             runtimeLog("APPLY fallback pending target=${requestedHz}Hz retry=true")
                         }
                     }
                 }
-            }.apply { start() }
+            }
             return
         }
         val configKey = if (requestedHz == 0) {
@@ -456,8 +465,6 @@ class KeepAliveAccessibilityService : AccessibilityService() {
             restoreWatchdogActive = false
             restoreWatchdogGeneration = -1L
         }
-        val generation = nextSwitchGeneration()
-
         if (restoreMode == null) {
             restoreMode = AutoOverclockManager.getCurrentMode(this)
             restoreHz = restoreMode?.rateInt ?: AutoOverclockManager.getCurrentRefreshRate(this)
@@ -477,23 +484,18 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         runtimeLog("APPLY pkg=$effectivePkg target=$res@$requestedLabel resolved=${resolvedHz}Hz")
         restoreInProgress = false
         restoringToPackage = ""
-        switchThread = Thread {
+        RefreshSwitchCoordinator.submit("apply") { gen, _ ->
             withSwitchWakeLock("apply") {
-                applyDisplayTarget(res, resolvedHz, configKey, generation, modes)
+                applyDisplayTarget(res, resolvedHz, configKey, gen, modes)
             }
-        }.apply { start() }
+        }
     }
 
     private fun nextSwitchGeneration(): Long {
-        val generation = synchronized(switchStateLock) {
-            switchGeneration += 1
-            switchGeneration
-        }
-        switchThread?.interrupt()
-        return generation
+        return RefreshSwitchCoordinator.nextGeneration()
     }
 
-    private fun isSwitchCancelled(generation: Long): Boolean = generation != switchGeneration
+    private fun isSwitchCancelled(generation: Long): Boolean = !RefreshSwitchCoordinator.isCurrent(generation)
 
     private fun isTransientForeground(pkg: String): Boolean {
         return pkg == "android" || pkg == "com.android.systemui"
@@ -552,7 +554,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         runtimeLog(
             "POLL heartbeat top=$topPkg source=$source custom=${prefs.getBoolean("custom_app_refresh", false)} " +
                 "current=$currentFgPackage pending=$pendingFgPackage last=$lastAppliedConfig " +
-                "restore=${restoreMode?.resolutionLabel}@${restoreHz}Hz inProgress=$restoreInProgress gen=$switchGeneration " +
+                "restore=${restoreMode?.resolutionLabel}@${restoreHz}Hz inProgress=$restoreInProgress gen=${RefreshSwitchCoordinator.currentGeneration()} " +
                 "root=${RootUtils.isRootAvailable()} display=${RootUtils.readDisplayState().summary()}"
         )
     }
@@ -607,9 +609,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         if (hz > 0) {
             restoreHz = hz
             if (width > 0 && height > 0 && modeId > 0) {
-                restoreMode = DisplayMode(width, height, hz.toFloat(), modeId).apply {
-                    sfIndex = modeId - 1
-                }
+                restoreMode = DisplayMode(width, height, hz.toFloat(), modeId)
             }
             lastAppliedConfig = prefs.getString(KEY_LAST_APPLIED_CONFIG, "") ?: ""
             restoreSourceHz = persistedSourceHz.takeIf { it > 0 }
@@ -631,7 +631,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
 
     private fun clearRestoreStateIfCurrent(prefs: SharedPreferences?, generation: Long): Boolean {
         return synchronized(switchStateLock) {
-            if (generation != switchGeneration) {
+            if (!RefreshSwitchCoordinator.isCurrent(generation)) {
                 false
             } else {
                 clearRestoreStateLocked(prefs)
@@ -768,7 +768,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                             isSwitchCancelled(generation) || lastAppliedConfig != configKey
                         }
                     }
-                    val verification = waitForRefreshRate(target.rateInt, VERIFY_TIMEOUT_MS, "apply#$attempt", generation)
+                    val verification = waitForRefreshRate(target.rateInt, target, VERIFY_TIMEOUT_MS, "apply#$attempt", generation)
                     lastVerification = verification
                     runtimeLog("VERIFY apply attempt=$attempt steppedOk=$steppedOk reapplyOk=$reapplyOk ${verification.summary()}")
                     if (verification.matched) {
@@ -807,6 +807,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
 
     private fun waitForRefreshRate(
         targetHz: Int,
+        targetMode: DisplayMode?,
         timeoutMs: Long,
         reason: String,
         generation: Long
@@ -814,7 +815,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         val startedAt = System.currentTimeMillis()
         val deadline = System.currentTimeMillis() + timeoutMs
         var stableSince = 0L
-        var verification = readRefreshVerification(targetHz)
+        var verification = readRefreshVerification(targetHz, targetMode)
         var sawHighContradiction = verification.rootState.hasHighRateContradiction(targetHz)
         while (System.currentTimeMillis() < deadline && !isSwitchCancelled(generation)) {
             val now = System.currentTimeMillis()
@@ -825,34 +826,44 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                 stableSince = 0L
             }
             try { Thread.sleep(VERIFY_POLL_MS) } catch (e: InterruptedException) { break }
-            verification = readRefreshVerification(targetHz)
+            verification = readRefreshVerification(targetHz, targetMode)
             if (verification.rootState.hasHighRateContradiction(targetHz)) {
                 sawHighContradiction = true
             }
         }
         val now = System.currentTimeMillis()
-        val stableMatched = !sawHighContradiction && verification.matched && stableSince > 0L &&
+        // renderedFps 仅诊断,不否决匹配结果
+        val stableMatched = verification.matched && stableSince > 0L &&
             now - stableSince >= VERIFY_STABLE_MS
         val source = if (sawHighContradiction) "${verification.source}+highContradiction" else "${verification.source}+stable"
-        val result = if (verification.matched == stableMatched && !sawHighContradiction) {
-            verification
-        } else {
-            verification.copy(matched = stableMatched, source = source)
-        }
+        val result = verification.copy(matched = stableMatched, source = source)
         runtimeLog("VERIFY wait reason=$reason gen=$generation elapsed=${now - startedAt}ms ${result.summary()}")
         return result
     }
 
-    private fun readRefreshVerification(targetHz: Int): RefreshVerification {
+    private fun readRefreshVerification(targetHz: Int, targetMode: DisplayMode?): RefreshVerification {
         val androidHz = AutoOverclockManager.getCurrentRefreshRate(this)
         val rootState = RootUtils.readDisplayState()
         val source = if (rootState.hasRefreshEvidence()) "root" else "androidFallback"
         val matched = if (rootState.hasRefreshEvidence()) {
-            rootState.matchesTarget(targetHz)
+            if (targetMode != null) {
+                rootState.matchesMode(targetMode.width, targetMode.height, targetHz)
+                    .let { it is com.refreshrate.control.core.RefreshEvidence.EvidenceResult.Match }
+            } else {
+                rootState.matchesTarget(targetHz)
+            }
         } else {
             isRefreshRateMatched(androidHz, targetHz)
         }
-        return RefreshVerification(targetHz, androidHz, rootState, matched, source)
+        return RefreshVerification(
+            targetHz,
+            targetMode?.width,
+            targetMode?.height,
+            androidHz,
+            rootState,
+            matched,
+            source
+        )
     }
 
     private fun sleepBeforeRetry(attempt: Int) {
@@ -872,29 +883,51 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                     for ((index, delayMs) in delays.withIndex()) {
                         Thread.sleep(delayMs)
                         if (isSwitchCancelled(generation)) {
-                            runtimeLog("POST_RESTORE cancelled gen=$generation currentGen=$switchGeneration")
+                            runtimeLog("POST_RESTORE cancelled gen=$generation currentGen=${RefreshSwitchCoordinator.currentGeneration()}")
                             return@withSwitchWakeLock
                         }
-                        val before = readRefreshVerification(target.rateInt)
+                        val before = readRefreshVerification(target.rateInt, target)
                         runtimeLog("POST_RESTORE check=${index + 1} delay=${delayMs}ms ${before.summary()}")
                         finalMatched = before.matched
                         if (!before.matched) {
                             val allModes = cachedModes.ifEmpty { AutoOverclockManager.getSupportedModes(this) }
-                            val reapplyOk = if (allModes.isNotEmpty()) {
-                                RootUtils.switchRefreshRate(target, allModes, sourceHz) {
-                                    isSwitchCancelled(generation)
+                            // 经 coordinator 串行执行,不递增代号;若已有新请求则直接跳过,
+                            // 避免 watchdog 与队列中的手动/apply 任务并发写 RootUtils
+                            var reapplyOk = java.util.concurrent.atomic.AtomicBoolean(false)
+                            if (allModes.isNotEmpty()) {
+                                val latch = java.util.concurrent.CountDownLatch(1)
+                                RefreshSwitchCoordinator.submitWithoutBump("post-restore-reapply") { rGen, _ ->
+                                    try {
+                                        if (isSwitchCancelled(rGen) || restoreWatchdogGeneration != generation) {
+                                            runtimeLog(
+                                                "POST_RESTORE reapply skipped gen=$generation " +
+                                                    "currentGen=${RefreshSwitchCoordinator.currentGeneration()}"
+                                            )
+                                            return@submitWithoutBump
+                                        }
+                                        reapplyOk.set(RootUtils.switchRefreshRate(target, allModes, sourceHz) {
+                                            isSwitchCancelled(rGen) || restoreWatchdogGeneration != generation
+                                        })
+                                    } finally {
+                                        latch.countDown()
+                                    }
+                                }
+                                try {
+                                    latch.await(VERIFY_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+                                } catch (e: InterruptedException) {
+                                    runtimeLog("POST_RESTORE reapply wait interrupted gen=$generation")
                                 }
                             } else {
                                 runtimeLog("POST_RESTORE noModes skip unsafe reapply gen=$generation")
-                                false
                             }
                             val after = waitForRefreshRate(
                                 target.rateInt,
+                                target,
                                 VERIFY_TIMEOUT_MS,
                                 "postRestore#${index + 1}",
                                 generation
                             )
-                            runtimeLog("POST_RESTORE reapplied=${index + 1} reapplyOk=$reapplyOk ${after.summary()}")
+                            runtimeLog("POST_RESTORE reapplied=${index + 1} reapplyOk=${reapplyOk.get()} ${after.summary()}")
                             finalMatched = after.matched
                         }
                     }
@@ -907,7 +940,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                     }
                 }
             } catch (e: InterruptedException) {
-                runtimeLog("POST_RESTORE interrupted gen=$generation currentGen=$switchGeneration")
+                runtimeLog("POST_RESTORE interrupted gen=$generation currentGen=${RefreshSwitchCoordinator.currentGeneration()}")
             } catch (e: Exception) {
                 runtimeLog("POST_RESTORE failed gen=$generation error=${e.message}")
             } finally {
