@@ -298,7 +298,7 @@ private fun CustomAppCountCard(
         modifier = modifier.fillMaxWidth(),
         cornerRadius = 20.dp,
         colors = CardDefaults.defaultColors(),
-        pressFeedbackType = PressFeedbackType.Sink,
+        pressFeedbackType = PressFeedbackType.Tilt,
         showIndication = true,
         onClick = onClick,
     ) {
@@ -345,7 +345,7 @@ private fun RateCardItem(
         modifier = modifier.fillMaxWidth(),
         insideMargin = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
         colors = CardDefaults.defaultColors(color = color, contentColor = titleColor),
-        pressFeedbackType = PressFeedbackType.Sink,
+        pressFeedbackType = PressFeedbackType.Tilt,
         showIndication = true,
         onClick = onClick,
     ) {

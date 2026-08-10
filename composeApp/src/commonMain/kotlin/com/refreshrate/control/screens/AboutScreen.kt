@@ -121,7 +121,7 @@ private fun AboutLinkCard(
             .fillMaxWidth()
             .padding(bottom = 12.dp),
         colors = CardDefaults.defaultColors(),
-        pressFeedbackType = PressFeedbackType.Sink,
+        pressFeedbackType = PressFeedbackType.Tilt,
         showIndication = true,
         onClick = onClick,
     ) {
