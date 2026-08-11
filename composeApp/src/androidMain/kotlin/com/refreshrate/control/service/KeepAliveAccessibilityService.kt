@@ -20,8 +20,10 @@ import android.view.accessibility.AccessibilityWindowInfo
 import androidx.core.app.NotificationCompat
 import com.refreshrate.control.BuildConfig
 import com.refreshrate.control.MainActivity
+import com.refreshrate.control.core.OwnershipState
 import com.refreshrate.control.model.DisplayMode
 import com.refreshrate.control.util.AutoOverclockManager
+import com.refreshrate.control.util.RefreshOwnership
 import com.refreshrate.control.util.RefreshSwitchCoordinator
 import com.refreshrate.control.util.RootUtils
 import com.refreshrate.control.util.RuntimeLog
@@ -112,6 +114,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         )
 
         servicePrefs?.registerOnSharedPreferenceChangeListener(prefListener)
+        RefreshOwnership.syncFromPrefs(this)
         restoreStateFromPrefs(servicePrefs)
 
         if (servicePrefs?.getBoolean("custom_app_refresh", false) == true) {
@@ -222,6 +225,18 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         runtimeLog("STATE last=$lastAppliedConfig restore=${restoreMode?.resolutionLabel}@${restoreHz}Hz gen=${RefreshSwitchCoordinator.currentGeneration()}")
 
         if (!enabled) {
+            // 统一 ownership 状态:手动接管期间普通前台切换不得触发旧 restore
+            RefreshOwnership.syncFromPrefs(this)
+            val ownership = RefreshOwnership.currentState()
+            if (ownership.shouldSuppressRestore()) {
+                runtimeLog(
+                    "OWNERSHIP restoreSuppressed pkg=$basePkg manual=${ownership.manualBaseline?.resolutionLabel}@${ownership.manualBaseline?.refreshRate}Hz " +
+                        "gen=${RefreshSwitchCoordinator.currentGeneration()} oldRestore=${restoreMode?.resolutionLabel}@${restoreHz}Hz"
+                )
+                // 清除残留 restore 状态,防止后续前台事件再次恢复旧目标
+                clearRestoreState(prefs)
+                return
+            }
             val savedConfig = prefs.getString(KEY_LAST_APPLIED_CONFIG, "") ?: ""
             if (savedConfig.isNotEmpty() || lastAppliedConfig.isNotEmpty() || restoreMode != null || restoreHz > 0) {
                 if (restoreWatchdogActive) {
@@ -349,6 +364,10 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                             if (restored) {
                                 if (gen == RefreshSwitchCoordinator.currentGeneration()) {
                                     runtimeLog("RESTORE success target=${restoreTargetHz}Hz ${lastVerification?.summary().orEmpty()}")
+                                    // auto profile 已退出:ownership 回到 MANUAL_SELECTED(有 manual baseline)或 IDLE
+                                    if (RefreshOwnership.currentState().state == OwnershipState.AUTO_PROFILE_ENTERED) {
+                                        RefreshOwnership.recordAutoProfileExited(this)
+                                    }
                                     if (restoreTargetMode != null) {
                                         scheduleRestoreWatchdog(restoreTargetMode, transitionSourceHz, gen)
                                     } else {
@@ -411,6 +430,25 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                 saveRestoreState(prefs, restoreMode, restoreHz)
                 runtimeLog("RESTORE save ${restoreMode?.resolutionLabel ?: "?"}@${restoreHz}Hz")
             }
+            // auto profile 接管(fallback 路径):同样记录 ownership
+            RefreshOwnership.syncFromPrefs(this)
+            val fallbackActual = AutoOverclockManager.getCurrentMode(this)
+            if (fallbackActual != null) {
+                RefreshOwnership.recordAutoProfileEntered(this, fallbackActual.toIdentity())
+            }
+            // 以 ownership 的 manual baseline 覆盖服务 restore 状态,清除手动接管前的残留
+            val fallbackBaseline = RefreshOwnership.currentState().manualBaseline
+            if (fallbackBaseline != null) {
+                restoreMode = DisplayMode(
+                    fallbackBaseline.width,
+                    fallbackBaseline.height,
+                    fallbackBaseline.refreshRate,
+                    fallbackBaseline.modeId
+                )
+                restoreHz = fallbackBaseline.rateInt
+                saveRestoreState(prefs, restoreMode, restoreHz)
+                runtimeLog("RESTORE baseline manual ${fallbackBaseline.resolutionLabel}@${fallbackBaseline.refreshRate}Hz")
+            }
             lastAppliedConfig = fallbackKey
             restoreSourceHz = requestedHz
             prefs.edit()
@@ -471,6 +509,28 @@ class KeepAliveAccessibilityService : AccessibilityService() {
             saveRestoreState(prefs, restoreMode, restoreHz)
             Log.i(TAG, "记录进入前刷新率: ${restoreMode?.resolutionLabel ?: "?"} @ ${restoreHz}Hz")
             runtimeLog("RESTORE save ${restoreMode?.resolutionLabel ?: "?"}@${restoreHz}Hz")
+        }
+
+        // auto profile 接管:记录 ownership(以 manual baseline 或当前实际模式为恢复基线)
+        RefreshOwnership.syncFromPrefs(this)
+        val currentActual = AutoOverclockManager.getCurrentMode(this)
+        if (currentActual != null) {
+            RefreshOwnership.recordAutoProfileEntered(this, currentActual.toIdentity())
+        } else {
+            runtimeLog("OWNERSHIP takeover skipped noCurrentMode pkg=$effectivePkg")
+        }
+        // 以 ownership 的 manual baseline 覆盖服务 restore 状态,清除手动接管前的残留
+        val takeoverBaseline = RefreshOwnership.currentState().manualBaseline
+        if (takeoverBaseline != null) {
+            restoreMode = DisplayMode(
+                takeoverBaseline.width,
+                takeoverBaseline.height,
+                takeoverBaseline.refreshRate,
+                takeoverBaseline.modeId
+            )
+            restoreHz = takeoverBaseline.rateInt
+            saveRestoreState(prefs, restoreMode, restoreHz)
+            runtimeLog("RESTORE baseline manual ${takeoverBaseline.resolutionLabel}@${takeoverBaseline.refreshRate}Hz")
         }
 
         lastAppliedConfig = configKey

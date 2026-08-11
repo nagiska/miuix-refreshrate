@@ -1,5 +1,6 @@
 package com.refreshrate.control.model
 
+import com.refreshrate.control.core.ModeIdentity
 import com.refreshrate.control.core.ModeSpec
 
 class DisplayMode(
@@ -11,6 +12,8 @@ class DisplayMode(
     var sfIndex: Int = -1
 
     fun toModeSpec(): ModeSpec = ModeSpec(width, height, refreshRate, modeId, sfIndex)
+
+    fun toIdentity(): ModeIdentity = ModeIdentity(width, height, refreshRate, modeId)
 
     val resolutionLabel: String
         get() = "${width}x${height}"

@@ -19,6 +19,7 @@ import com.refreshrate.control.model.AppInfo
 import com.refreshrate.control.model.DisplayMode
 import com.refreshrate.control.util.AutoOverclockManager
 import com.refreshrate.control.util.PrefsHelper
+import com.refreshrate.control.util.RefreshOwnership
 import com.refreshrate.control.util.RefreshSwitchCoordinator
 import com.refreshrate.control.util.RootUtils
 import com.refreshrate.control.util.RuntimeLog
@@ -82,9 +83,16 @@ actual fun refreshDisplayData(refreshKey: Int): DisplayData? {
 }
 
 actual fun applyDisplayMode(authMode: String, mode: DisplayMode, context: AppContext) {
+    // 手动接管:先写入 ownership(完整 identity)+ 清理服务 restore keys,
+    // 再经 coordinator 提交切换;旧 auto apply/restore/watchdog 由 coordinator 递增代号淘汰
+    val ctx = context.context
+    RefreshOwnership.recordManualSelected(
+        ctx,
+        com.refreshrate.control.core.ModeIdentity(mode.width, mode.height, mode.refreshRate, mode.modeId)
+    )
+    RefreshOwnership.clearServiceRestoreState(ctx)
     RefreshSwitchCoordinator.submit("manual:${mode.rateInt}Hz") { gen, isCancelled ->
         try {
-            val ctx = context.context
             val currentHz = com.refreshrate.control.util.AutoOverclockManager.getCurrentRefreshRate(ctx)
             val allModes = com.refreshrate.control.util.AutoOverclockManager.getSupportedModes(ctx)
             val steppedOk = com.refreshrate.control.util.RootUtils.switchRefreshRate(mode, allModes, currentHz) {
