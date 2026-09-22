@@ -11,6 +11,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -184,17 +185,22 @@ private fun MainScaffold(
             )
             }
 
-        FloatingNavigationBar(
-            modifier = Modifier.align(Alignment.BottomCenter),
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth(),
+            contentAlignment = Alignment.BottomCenter,
         ) {
-            items.forEachIndexed { index, item ->
-                FloatingNavigationBarItem(
-                    selected = currentTab == index,
-                    onClick = { onTabChange(index) },
-                    icon = item.icon,
-                    label = item.label,
-                    colors = itemColors,
-                )
+            FloatingNavigationBar {
+                items.forEachIndexed { index, item ->
+                    FloatingNavigationBarItem(
+                        selected = currentTab == index,
+                        onClick = { onTabChange(index) },
+                        icon = item.icon,
+                        label = item.label,
+                        colors = itemColors,
+                    )
+                }
             }
         }
     }
