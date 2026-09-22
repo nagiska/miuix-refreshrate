@@ -154,22 +154,28 @@ object RootUtils {
         if (output.isBlank()) return emptyList()
 
         val modes = mutableListOf<DisplayMode>()
+        var sfIdx = 0
         for (line in output.lines()) {
             val match = RECORD_PATTERN.find(line) ?: continue
             val id = match.groupValues[1].toIntOrNull() ?: continue
             val w = match.groupValues[2].toIntOrNull() ?: continue
             val h = match.groupValues[3].toIntOrNull() ?: continue
-            // 保留原始浮点速率(59.94/60.0 不得合并);sfIndex 不猜测,仅已验证设备显式设置
             val fps = match.groupValues[4].toFloatOrNull() ?: continue
+            // sfIndex = 该 DisplayModeRecord 在 dumpsys 中的出现序号(0 基),
+            // 与 SurfaceFlinger setActiveDisplayMode(事务 1035)期望的模式列表下标一致。
+            // 仅计数匹配到的记录(含被 fps 过滤掉的),保证序号与 SF 内部模式表对齐。
+            val sfIndex = sfIdx
+            sfIdx++
+            // 保留原始浮点速率(59.94/60.0 不得合并)
             if (fps in 30f..300f) {
-                modes.add(DisplayMode(w, h, fps, id))
+                modes.add(DisplayMode(w, h, fps, id).also { it.sfIndex = sfIndex })
             }
         }
         return modes.sortedBy { it.rateInt }
     }
 
-    fun setRate(mode: DisplayMode?, targetHz: Int): Boolean {
-        val sfIndex = mode?.sfIndex?.takeIf { it >= 0 }
+    fun setRate(mode: DisplayMode?, targetHz: Int, useSfFallback: Boolean = false): Boolean {
+        val sfIndex = mode?.sfIndex?.takeIf { it >= 0 }?.takeIf { useSfFallback }
         Log.d(TAG, "setRate: modeId=${mode?.modeId}, hz=$targetHz, sfIndex=$sfIndex")
         val script = buildString {
             if (sfIndex != null) {
@@ -185,8 +191,8 @@ object RootUtils {
         return result.ok
     }
 
-    fun setRateDown(mode: DisplayMode?, targetHz: Int): Boolean {
-        val sfIndex = mode?.sfIndex?.takeIf { it >= 0 }
+    fun setRateDown(mode: DisplayMode?, targetHz: Int, useSfFallback: Boolean = false): Boolean {
+        val sfIndex = mode?.sfIndex?.takeIf { it >= 0 }?.takeIf { useSfFallback }
         Log.d(TAG, "setRateDown: modeId=${mode?.modeId}, hz=$targetHz, sfIndex=$sfIndex")
         val script = buildString {
             // Reverse the working upshift order so min never remains above peak.
@@ -277,16 +283,32 @@ object RootUtils {
         return execRootDetailed("service call SurfaceFlinger 1034 i32 $valInt", "nativeRefreshOverlay=$on").ok
     }
 
-    fun steppedSwitch(targetMode: DisplayMode, allModes: List<DisplayMode>, currentHz: Int, isCancelled: () -> Boolean = { false }): Boolean {
-        return switchRefreshRate(targetMode, allModes, currentHz, isCancelled)
+    fun steppedSwitch(
+        targetMode: DisplayMode,
+        allModes: List<DisplayMode>,
+        currentHz: Int,
+        useSfFallback: Boolean = false,
+        isCancelled: () -> Boolean = { false }
+    ): Boolean {
+        return switchRefreshRate(targetMode, allModes, currentHz, useSfFallback, isCancelled)
     }
 
     /**
      * 统一切换流程:升档、降档、同档都按 RefreshPlan 生成步进,
      * 并在未取消时对目标 DisplayMode 做一次完整最终提交
-     * (preferred mode + 必要 settings + 受控 SF fallback),记录目标 modeId。
+     * (preferred mode + 必要 settings + 受控 SF fallback)。
+     *
+     * @param useSfFallback 为 true 时才在命令里追加 service call SurfaceFlinger 1035(需 sfIndex>=0)。
+     *   默认 false:正常首试只走 set-user-preferred + settings;仅当首试校验失败后的重试才置 true,
+     *   让"忽略 set-user-preferred-display-mode 的设备"多一条 SurfaceFlinger 杠杆,同时不干扰已正常工作的设备。
      */
-    fun switchRefreshRate(targetMode: DisplayMode, allModes: List<DisplayMode>, currentHz: Int, isCancelled: () -> Boolean = { false }): Boolean {
+    fun switchRefreshRate(
+        targetMode: DisplayMode,
+        allModes: List<DisplayMode>,
+        currentHz: Int,
+        useSfFallback: Boolean = false,
+        isCancelled: () -> Boolean = { false }
+    ): Boolean {
         val targetHz = targetMode.rateInt
         val plan = RefreshPlan.plan(
             target = targetMode.toModeSpec(),
@@ -301,7 +323,7 @@ object RootUtils {
         )
         RuntimeLog.appendGlobal(
             TAG,
-            "STEP ${plan.direction} current=${currentHz}Hz target=${targetHz}Hz steps=${plan.steps.map { it.rateInt }}"
+            "STEP ${plan.direction} current=${currentHz}Hz target=${targetHz}Hz steps=${plan.steps.map { it.rateInt }} sfFallback=$useSfFallback"
         )
         for (stepSpec in plan.steps) {
             if (isCancelled()) {
@@ -311,9 +333,9 @@ object RootUtils {
             }
             val stepMode = allModes.firstOrNull { it.modeId == stepSpec.modeId } ?: targetMode
             val stepOk = if (plan.direction == SwitchDirection.UP) {
-                setRate(stepMode, stepMode.rateInt)
+                setRate(stepMode, stepMode.rateInt, useSfFallback)
             } else {
-                setRateDown(stepMode, stepMode.rateInt)
+                setRateDown(stepMode, stepMode.rateInt, useSfFallback)
             }
             ok = stepOk && ok
             RuntimeLog.appendGlobal(TAG, "STEP ${plan.direction} set=${stepMode.rateInt}Hz modeId=${stepMode.modeId} ok=$stepOk")
@@ -324,7 +346,7 @@ object RootUtils {
         }
         // 最终提交:升档、降档、同档都在未取消时对目标做一次完整提交
         if (!isCancelled()) {
-            val finalOk = commitTargetMode(targetMode, targetHz)
+            val finalOk = commitTargetMode(targetMode, targetHz, useSfFallback)
             ok = finalOk && ok
             RuntimeLog.appendGlobal(
                 TAG,
@@ -337,10 +359,11 @@ object RootUtils {
 
     /**
      * 对目标 DisplayMode 做一次完整最终提交:
-     * preferred mode + 必要 settings + 受控的 SF fallback(仅已验证设备,sfIndex >= 0)。
+     * preferred mode + 必要 settings + 受控的 SF fallback。
+     * SF fallback(service call SurfaceFlinger 1035)仅在 useSfFallback=true 且 sfIndex>=0 时追加。
      */
-    private fun commitTargetMode(targetMode: DisplayMode, targetHz: Int): Boolean {
-        val sfIndex = targetMode.sfIndex.takeIf { it >= 0 }
+    private fun commitTargetMode(targetMode: DisplayMode, targetHz: Int, useSfFallback: Boolean = false): Boolean {
+        val sfIndex = targetMode.sfIndex.takeIf { it >= 0 }?.takeIf { useSfFallback }
         val script = buildString {
             appendLine("cmd display set-user-preferred-display-mode ${targetMode.width} ${targetMode.height} $targetHz")
             appendLine("settings put system peak_refresh_rate ${targetHz}.0")

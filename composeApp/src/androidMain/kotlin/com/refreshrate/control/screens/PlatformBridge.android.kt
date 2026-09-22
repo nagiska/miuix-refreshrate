@@ -117,7 +117,7 @@ actual fun applyDisplayMode(authMode: String, mode: DisplayMode, context: AppCon
                 val reapplyOk = if (attempt == 1) {
                     steppedOk
                 } else {
-                    com.refreshrate.control.util.RootUtils.switchRefreshRate(mode, allModes, currentHz) {
+                    com.refreshrate.control.util.RootUtils.switchRefreshRate(mode, allModes, currentHz, useSfFallback = true) {
                         isCancelled(gen)
                     }
                 }

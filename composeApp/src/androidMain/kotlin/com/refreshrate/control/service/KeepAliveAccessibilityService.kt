@@ -325,7 +325,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                                     val reapplyOk = if (attempt == 1) {
                                         steppedOk
                                     } else {
-                                        RootUtils.switchRefreshRate(target, allModes, transitionSourceHz) {
+                                        RootUtils.switchRefreshRate(target, allModes, transitionSourceHz, useSfFallback = true) {
                                             isSwitchCancelled(gen)
                                         }
                                     }
@@ -824,7 +824,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                     val reapplyOk = if (attempt == 1) {
                         steppedOk
                     } else {
-                        RootUtils.switchRefreshRate(target, allModes, currentHz) {
+                        RootUtils.switchRefreshRate(target, allModes, currentHz, useSfFallback = true) {
                             isSwitchCancelled(generation) || lastAppliedConfig != configKey
                         }
                     }
@@ -965,7 +965,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                                             )
                                             return@submitWithoutBump
                                         }
-                                        reapplyOk.set(RootUtils.switchRefreshRate(target, allModes, sourceHz) {
+                                        reapplyOk.set(RootUtils.switchRefreshRate(target, allModes, sourceHz, useSfFallback = true) {
                                             isSwitchCancelled(rGen) || restoreWatchdogGeneration != generation
                                         })
                                     } finally {
