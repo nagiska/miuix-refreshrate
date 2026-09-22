@@ -110,15 +110,51 @@ object RootUtils {
         return execRootDetailed(script).ok
     }
 
+    private data class RootOutput(val exitCode: Int, val stdout: String, val stderr: String)
+
+    /**
+     * 执行 su 脚本并并发抽干 stdout/stderr,避免输出超过管道缓冲时
+     * 子进程写阻塞与父进程 waitFor 互等造成死锁。
+     */
+    private fun runRootCapture(script: String): RootOutput {
+        val process = Runtime.getRuntime().exec("su")
+        val outBuf = StringBuilder()
+        val errBuf = StringBuilder()
+        val outThread = Thread {
+            try {
+                BufferedReader(InputStreamReader(process.inputStream)).use { reader ->
+                    reader.forEachLine { outBuf.append(it).append('\n') }
+                }
+            } catch (_: Exception) { }
+        }.apply { isDaemon = true }
+        val errThread = Thread {
+            try {
+                BufferedReader(InputStreamReader(process.errorStream)).use { reader ->
+                    reader.forEachLine { errBuf.append(it).append('\n') }
+                }
+            } catch (_: Exception) { }
+        }.apply { isDaemon = true }
+        outThread.start()
+        errThread.start()
+        try {
+            DataOutputStream(process.outputStream).use { stdin ->
+                stdin.writeBytes("$script\nexit\n")
+                stdin.flush()
+            }
+        } catch (_: Exception) { }
+        val exitCode = try {
+            process.waitFor()
+        } catch (e: InterruptedException) {
+            -1
+        }
+        try { outThread.join(3000) } catch (_: InterruptedException) { }
+        try { errThread.join(3000) } catch (_: InterruptedException) { }
+        return RootOutput(exitCode, outBuf.toString().trim(), errBuf.toString().trim())
+    }
+
     fun execRootDetailed(script: String, label: String = firstCommand(script)): RootCommandResult {
         return try {
-            val process = Runtime.getRuntime().exec("su")
-            val stdin = DataOutputStream(process.outputStream)
-            stdin.writeBytes("$script\nexit\n")
-            stdin.flush()
-            val exitCode = process.waitFor()
-            val out = BufferedReader(InputStreamReader(process.inputStream)).readText().trim()
-            val err = BufferedReader(InputStreamReader(process.errorStream)).readText().trim()
+            val (exitCode, out, err) = runRootCapture(script)
             val result = RootCommandResult(exitCode == 0, exitCode, out, err, label)
             logRootResult(result)
             result
@@ -131,13 +167,7 @@ object RootUtils {
 
     fun execRootForOutput(script: String, log: Boolean = false, label: String = firstCommand(script)): String {
         return try {
-            val process = Runtime.getRuntime().exec("su")
-            val stdin = DataOutputStream(process.outputStream)
-            stdin.writeBytes("$script\nexit\n")
-            stdin.flush()
-            val exitCode = process.waitFor()
-            val out = BufferedReader(InputStreamReader(process.inputStream)).readText().trim()
-            val err = BufferedReader(InputStreamReader(process.errorStream)).readText().trim()
+            val (exitCode, out, err) = runRootCapture(script)
             if (log || exitCode != 0 || err.isNotBlank()) {
                 logRootResult(RootCommandResult(exitCode == 0, exitCode, out, err, label))
             }
@@ -156,19 +186,22 @@ object RootUtils {
         val modes = mutableListOf<DisplayMode>()
         var sfIdx = 0
         for (line in output.lines()) {
-            val match = RECORD_PATTERN.find(line) ?: continue
-            val id = match.groupValues[1].toIntOrNull() ?: continue
-            val w = match.groupValues[2].toIntOrNull() ?: continue
-            val h = match.groupValues[3].toIntOrNull() ?: continue
-            val fps = match.groupValues[4].toFloatOrNull() ?: continue
-            // sfIndex = 该 DisplayModeRecord 在 dumpsys 中的出现序号(0 基),
-            // 与 SurfaceFlinger setActiveDisplayMode(事务 1035)期望的模式列表下标一致。
-            // 仅计数匹配到的记录(含被 fps 过滤掉的),保证序号与 SF 内部模式表对齐。
-            val sfIndex = sfIdx
-            sfIdx++
-            // 保留原始浮点速率(59.94/60.0 不得合并)
-            if (fps in 30f..300f) {
-                modes.add(DisplayMode(w, h, fps, id).also { it.sfIndex = sfIndex })
+            // 跳过 mActiveMode=/mDefaultMode= 等单模式引用行:它们不是 supported-modes 列表项,
+            // 若计入会污染 SurfaceFlinger 1035 的序号。
+            if (line.contains("mActiveMode") || line.contains("mDefaultMode")) continue
+            for (match in RECORD_PATTERN.findAll(line)) {
+                val id = match.groupValues[1].toIntOrNull() ?: continue
+                val w = match.groupValues[2].toIntOrNull() ?: continue
+                val h = match.groupValues[3].toIntOrNull() ?: continue
+                val fps = match.groupValues[4].toFloatOrNull() ?: continue
+                // sfIndex = supported-modes 列表出现序号(0 基),对齐 SF 事务 1035 期望的下标;
+                // 含被 fps 过滤掉的记录也计数,保证序号与 SF 内部模式表对齐。
+                val sfIndex = sfIdx
+                sfIdx++
+                // 保留原始浮点速率(59.94/60.0 不得合并)
+                if (fps in 30f..300f) {
+                    modes.add(DisplayMode(w, h, fps, id).also { it.sfIndex = sfIndex })
+                }
             }
         }
         return modes.sortedBy { it.rateInt }
@@ -273,7 +306,12 @@ object RootUtils {
         val script = buildString {
             appendLine("cmd display clear-user-preferred-display-mode")
             if (minHz > 0) appendLine("settings put system min_refresh_rate ${minHz}.0")
+            else appendLine("settings delete system min_refresh_rate")
             if (maxHz > 0) appendLine("settings put system peak_refresh_rate ${maxHz}.0")
+            else appendLine("settings delete system peak_refresh_rate")
+            // 释放 App 之前钉下的用户档与 MIUI 档,交还系统自适应(否则 min==peak 仍锁死)
+            appendLine("settings delete system user_refresh_rate")
+            appendLine("settings delete secure miui_refresh_rate")
         }
         return execRootDetailed(script.trimEnd(), "restoreAdaptive min=$minHz max=$maxHz").ok
     }

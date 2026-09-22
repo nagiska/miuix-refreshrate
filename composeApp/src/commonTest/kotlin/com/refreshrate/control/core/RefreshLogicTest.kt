@@ -131,4 +131,36 @@ class RefreshEvidenceTest {
         val result = RefreshEvidence.matchesMode(s, 1080, 2400, 90)
         assertTrue(result is RefreshEvidence.EvidenceResult.Mismatch)
     }
+
+    @Test
+    fun `settings and preferred cannot override real evidence mismatch`() {
+        // 面板真实停在 60(active/physical/driver 都 60),但 App 自己写了 preferred/settings=144
+        val s = RefreshEvidence.Snapshot(
+            activeModeId = 2, activeWidth = 1080, activeHeight = 2400, activeHz = 60,
+            physicalHz = 60, driverHz = 60,
+            preferredHz = 144, userHz = 144, peakHz = 144, minHz = 144, miuiHz = 144,
+            hasEvidence = true
+        )
+        val result = RefreshEvidence.matchesMode(s, 1080, 2400, 144)
+        assertTrue(
+            result is RefreshEvidence.EvidenceResult.Mismatch,
+            "面板真实证据不符时,不得被 App 自写的 preferred/settings 翻案成功"
+        )
+    }
+
+    @Test
+    fun `settings match only when no real panel evidence`() {
+        // 无 active/physical/driver,只有 settings=144 → 允许用 settings 判成功
+        val s = RefreshEvidence.Snapshot(
+            userHz = 144, peakHz = 144, minHz = 144, miuiHz = 144, hasEvidence = true
+        )
+        val result = RefreshEvidence.matchesMode(s, 1080, 2400, 144)
+        assertTrue(result is RefreshEvidence.EvidenceResult.Match, "无真实证据时才允许 settings 兜底判成功")
+    }
+
+    @Test
+    fun `matchesTarget also rejects settings override of real evidence`() {
+        val s = RefreshEvidence.Snapshot(activeHz = 60, physicalHz = 60, userHz = 144, peakHz = 144, hasEvidence = true)
+        assertFalse(RefreshEvidence.matchesTarget(s, 144), "真实证据 60 不得被 settings 144 翻案")
+    }
 }

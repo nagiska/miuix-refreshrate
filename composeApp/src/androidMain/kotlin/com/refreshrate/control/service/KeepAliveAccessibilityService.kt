@@ -228,7 +228,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
             // 统一 ownership 状态:手动接管期间普通前台切换不得触发旧 restore
             RefreshOwnership.syncFromPrefs(this)
             val ownership = RefreshOwnership.currentState()
-            if (ownership.shouldSuppressRestore()) {
+            if (ownership.shouldSuppressRestore() && lastAppliedConfig.isEmpty()) {
                 runtimeLog(
                     "OWNERSHIP restoreSuppressed pkg=$basePkg manual=${ownership.manualBaseline?.resolutionLabel}@${ownership.manualBaseline?.refreshRate}Hz " +
                         "gen=${RefreshSwitchCoordinator.currentGeneration()} oldRestore=${restoreMode?.resolutionLabel}@${restoreHz}Hz"
@@ -325,7 +325,8 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                                     val reapplyOk = if (attempt == 1) {
                                         steppedOk
                                     } else {
-                                        RootUtils.switchRefreshRate(target, allModes, transitionSourceHz, useSfFallback = true) {
+                                        val freshHz = AutoOverclockManager.getCurrentRefreshRate(this)
+                                        RootUtils.switchRefreshRate(target, allModes, freshHz, useSfFallback = true) {
                                             isSwitchCancelled(gen)
                                         }
                                     }
@@ -514,8 +515,11 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         // auto profile 接管:记录 ownership(以 manual baseline 或当前实际模式为恢复基线)
         RefreshOwnership.syncFromPrefs(this)
         val currentActual = AutoOverclockManager.getCurrentMode(this)
-        if (currentActual != null) {
-            RefreshOwnership.recordAutoProfileEntered(this, currentActual.toIdentity())
+        // 读不到当前模式时,用 manual baseline 兜底进入 AUTO_PROFILE_ENTERED,
+        // 避免状态停留在 MANUAL_SELECTED 导致退出时被 shouldSuppressRestore 误抑制。
+        val ownershipActual = currentActual?.toIdentity() ?: RefreshOwnership.currentState().manualBaseline
+        if (ownershipActual != null) {
+            RefreshOwnership.recordAutoProfileEntered(this, ownershipActual)
         } else {
             runtimeLog("OWNERSHIP takeover skipped noCurrentMode pkg=$effectivePkg")
         }
@@ -824,7 +828,8 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                     val reapplyOk = if (attempt == 1) {
                         steppedOk
                     } else {
-                        RootUtils.switchRefreshRate(target, allModes, currentHz, useSfFallback = true) {
+                        val freshHz = AutoOverclockManager.getCurrentRefreshRate(this)
+                        RootUtils.switchRefreshRate(target, allModes, freshHz, useSfFallback = true) {
                             isSwitchCancelled(generation) || lastAppliedConfig != configKey
                         }
                     }
@@ -958,7 +963,8 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                                 val latch = java.util.concurrent.CountDownLatch(1)
                                 RefreshSwitchCoordinator.submitWithoutBump("post-restore-reapply") { rGen, _ ->
                                     try {
-                                        if (isSwitchCancelled(rGen) || restoreWatchdogGeneration != generation) {
+                                        if (isSwitchCancelled(rGen) || restoreWatchdogGeneration != generation ||
+                                            RefreshSwitchCoordinator.currentGeneration() != generation) {
                                             runtimeLog(
                                                 "POST_RESTORE reapply skipped gen=$generation " +
                                                     "currentGen=${RefreshSwitchCoordinator.currentGeneration()}"
@@ -966,7 +972,8 @@ class KeepAliveAccessibilityService : AccessibilityService() {
                                             return@submitWithoutBump
                                         }
                                         reapplyOk.set(RootUtils.switchRefreshRate(target, allModes, sourceHz, useSfFallback = true) {
-                                            isSwitchCancelled(rGen) || restoreWatchdogGeneration != generation
+                                            isSwitchCancelled(rGen) || restoreWatchdogGeneration != generation ||
+                                                RefreshSwitchCoordinator.currentGeneration() != generation
                                         })
                                     } finally {
                                         latch.countDown()
