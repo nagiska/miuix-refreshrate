@@ -11,7 +11,6 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -21,7 +20,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import top.yukonga.miuix.kmp.basic.FloatingNavigationBar
+import top.yukonga.miuix.kmp.basic.FloatingNavigationBarItem
+import top.yukonga.miuix.kmp.basic.NavigationBarDefaults
 import top.yukonga.miuix.kmp.basic.NavigationItem
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -29,7 +32,6 @@ import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.icon.extended.VerticalSplit
 import androidx.lifecycle.compose.LifecycleResumeEffect
-import com.refreshrate.control.components.IosGlassNavigationBar
 import com.refreshrate.control.effect.Os3Background
 import com.refreshrate.control.screens.HomeScreen
 import com.refreshrate.control.screens.LocalAppContext
@@ -113,7 +115,6 @@ fun App() {
                             onNavigateToLogs = { navigationStack.add(SubScreen.RuntimeLog) },
                             onNavigateToRefreshTest = { navigationStack.add(SubScreen.RefreshRateTest) },
                             onNavigateToAbout = { navigationStack.add(SubScreen.About) },
-                            backdrop = backdrop,
                         )
                         is SubScreen.AppList -> AppListScreen(
                             onBack = { navigationStack.removeAt(navigationStack.lastIndex) },
@@ -152,12 +153,15 @@ private fun MainScaffold(
     onNavigateToLogs: () -> Unit,
     onNavigateToRefreshTest: () -> Unit,
     onNavigateToAbout: () -> Unit,
-    backdrop: top.yukonga.miuix.kmp.blur.LayerBackdrop,
 ) {
     val items = listOf(
         NavigationItem("首页", MiuixIcons.Refresh),
         NavigationItem("应用", MiuixIcons.VerticalSplit),
         NavigationItem("设置", MiuixIcons.Settings)
+    )
+    val itemColors = NavigationBarDefaults.navigationBarItemColors(
+        unselectedContentColor = MiuixTheme.colorScheme.onSurfaceContainer,
+        selectedContentColor = MiuixTheme.colorScheme.primary,
     )
     Box(
         modifier = Modifier.fillMaxSize()
@@ -180,18 +184,18 @@ private fun MainScaffold(
             )
             }
 
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth(),
-            contentAlignment = Alignment.BottomCenter,
+        FloatingNavigationBar(
+            modifier = Modifier.align(Alignment.BottomCenter),
         ) {
-            IosGlassNavigationBar(
-                items = items,
-                selectedIndex = currentTab,
-                onItemClick = onTabChange,
-                backdrop = backdrop,
-            )
+            items.forEachIndexed { index, item ->
+                FloatingNavigationBarItem(
+                    selected = currentTab == index,
+                    onClick = { onTabChange(index) },
+                    icon = item.icon,
+                    label = item.label,
+                    colors = itemColors,
+                )
+            }
         }
     }
 }
