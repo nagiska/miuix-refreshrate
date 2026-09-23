@@ -3,18 +3,19 @@ package com.refreshrate.control.screens
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -27,10 +28,9 @@ import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
-import kotlinx.coroutines.launch
+import kotlin.math.abs
 import top.yukonga.miuix.kmp.basic.FloatingNavigationBar
 import top.yukonga.miuix.kmp.basic.FloatingNavigationBarItem
-import kotlin.math.abs
 
 data class GlassNavItem(val label: String, val icon: ImageVector)
 
@@ -44,8 +44,11 @@ private fun rubberBand(raw: Float, limit: Float, dim: Float): Float {
 
 /**
  * 底部导航 = MIUIX FloatingNavigationBar(选中/高亮全 MIUIX)+ Kyant0 液态玻璃。
- * 交互:按住可向四周拖拽,带限位的橡皮筋阻尼;按压缩形(transformOrigin 跟随按压点,
- * 抓不同位置形变/倾斜不同)、沿拖动方向拉伸、垂直方向轻微压缩;松手弹性回弹。
+ * 交互(模仿参照视频):
+ *  - 按下即在按压点产生局部"凹陷"形变(形变枢轴 transformOrigin 跟随按压点,抓哪儿瘪哪儿),
+ *    垂直压扁 + 水平微张,抓偏中心带一点倾斜;
+ *  - 拖动跟手,带限位橡皮筋阻尼;
+ *  - 松手弹性回弹到原位,形变同步复原。
  */
 @Composable
 fun LiquidGlassNavBar(
@@ -55,16 +58,14 @@ fun LiquidGlassNavBar(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val scope = rememberCoroutineScope()
     val offsetX = remember { Animatable(0f) }
     val offsetY = remember { Animatable(0f) }
-    var rawX by remember { mutableFloatStateOf(0f) }
-    var rawY by remember { mutableFloatStateOf(0f) }
+    val pressScale = remember { Animatable(0f) }
     var origin by remember { mutableStateOf(TransformOrigin.Center) }
 
     val density = LocalDensity.current
-    val limit = with(density) { 18f.dp.toPx() }
-    val dim = with(density) { 44f.dp.toPx() }
+    val limit = with(density) { 20f.dp.toPx() }
+    val dim = with(density) { 46f.dp.toPx() }
     val blurPx = with(density) { 16f.dp.toPx() }
     val lensW = with(density) { 22f.dp.toPx() }
     val lensH = with(density) { 26f.dp.toPx() }
@@ -82,43 +83,38 @@ fun LiquidGlassNavBar(
                 translationX = dx
                 translationY = dy
                 transformOrigin = origin
-                // 沿拖动方向拉伸、垂直方向轻微压缩(液态形变)
-                val sx = abs(dx) / limit
-                val sy = abs(dy) / limit
-                scaleX = 1f + sx * 0.07f - sy * 0.02f
-                scaleY = 1f + sy * 0.07f - sx * 0.02f
+                val ps = pressScale.value
+                val sxDrag = abs(dx) / limit
+                val syDrag = abs(dy) / limit
+                // 按压处局部形变:以按压点为枢轴,垂直压扁、水平微张;拖动时沿方向再拉伸
+                scaleX = 1f + ps * 0.06f + sxDrag * 0.05f
+                scaleY = 1f - ps * 0.12f + syDrag * 0.05f
                 // 抓取点偏离中心时轻微倾斜,强化"相对位置变化"
-                rotationZ = (origin.pivotFractionX - 0.5f) * (sx + sy) * 4f
+                rotationZ = (origin.pivotFractionX - 0.5f) * ps * 5f
             }
             .pointerInput(Unit) {
-                detectDragGestures(
-                    onDragStart = { start ->
-                        origin = TransformOrigin(
-                            (start.x / size.width.toFloat()).coerceIn(0f, 1f),
-                            (start.y / size.height.toFloat()).coerceIn(0f, 1f),
-                        )
-                    },
-                    onDragEnd = {
-                        rawX = 0f; rawY = 0f
-                        scope.launch {
-                            offsetX.animateTo(0f, springBack)
-                            offsetY.animateTo(0f, springBack)
-                        }
-                    },
-                    onDragCancel = {
-                        rawX = 0f; rawY = 0f
-                        scope.launch {
-                            offsetX.animateTo(0f, springBack)
-                            offsetY.animateTo(0f, springBack)
-                        }
-                    },
-                ) { _, dragAmount ->
-                    rawX += dragAmount.x
-                    rawY += dragAmount.y
-                    scope.launch {
-                        offsetX.snapTo(rubberBand(rawX, limit, dim))
-                        offsetY.snapTo(rubberBand(rawY, limit, dim))
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val w = size.width.toFloat().coerceAtLeast(1f)
+                    val h = size.height.toFloat().coerceAtLeast(1f)
+                    origin = TransformOrigin(
+                        (down.position.x / w).coerceIn(0f, 1f),
+                        (down.position.y / h).coerceIn(0f, 1f),
+                    )
+                    pressScale.animateTo(1f, tween(120))
+                    var total = Offset.Zero
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!change.pressed) break
+                        total += change.positionChange()
+                        offsetX.snapTo(rubberBand(total.x, limit, dim))
+                        offsetY.snapTo(rubberBand(total.y, limit, dim))
                     }
+                    // 松手:弹性回弹到原位 + 形变复原
+                    offsetX.animateTo(0f, springBack)
+                    offsetY.animateTo(0f, springBack)
+                    pressScale.animateTo(0f, tween(150))
                 }
             }
     ) {
