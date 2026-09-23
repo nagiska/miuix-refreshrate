@@ -1,6 +1,7 @@
 package com.refreshrate.control.util
 
 import android.util.Log
+import com.refreshrate.control.core.DisplayRecordParser
 import com.refreshrate.control.core.ModeSpec
 import com.refreshrate.control.core.RefreshEvidence
 import com.refreshrate.control.core.RefreshPlan
@@ -14,7 +15,6 @@ import kotlin.math.roundToInt
 
 object RootUtils {
     private const val TAG = "RootUtils"
-    private val RECORD_PATTERN = Regex("""id=(\d+),\s*width=(\d+),\s*height=(\d+),\s*fps=([\d.]+)""")
     private val NUMBER_PATTERN = Regex("""-?\d+(?:\.\d+)?""")
 
     data class RootCommandResult(
@@ -184,23 +184,17 @@ object RootUtils {
         if (output.isBlank()) return emptyList()
 
         val modes = mutableListOf<DisplayMode>()
-        var sfIdx = 0
+        var ordinal = 0
         for (line in output.lines()) {
-            // 跳过 mActiveMode=/mDefaultMode= 等单模式引用行:它们不是 supported-modes 列表项,
-            // 若计入会污染 SurfaceFlinger 1035 的序号。
+            // 跳过 mActiveMode=/mDefaultMode= 等单模式引用行:它们不是 supported-modes 列表项。
             if (line.contains("mActiveMode") || line.contains("mDefaultMode")) continue
-            for (match in RECORD_PATTERN.findAll(line)) {
-                val id = match.groupValues[1].toIntOrNull() ?: continue
-                val w = match.groupValues[2].toIntOrNull() ?: continue
-                val h = match.groupValues[3].toIntOrNull() ?: continue
-                val fps = match.groupValues[4].toFloatOrNull() ?: continue
-                // sfIndex = supported-modes 列表出现序号(0 基),对齐 SF 事务 1035 期望的下标;
-                // 含被 fps 过滤掉的记录也计数,保证序号与 SF 内部模式表对齐。
-                val sfIndex = sfIdx
-                sfIdx++
+            for (rec in DisplayRecordParser.parseLine(line)) {
+                // 优先用记录自带的 sfModeId(SF 事务 1035 权威索引);缺失才退回路序序号。
+                val sfIndex = rec.sfModeId ?: ordinal
+                ordinal++
                 // 保留原始浮点速率(59.94/60.0 不得合并)
-                if (fps in 30f..300f) {
-                    modes.add(DisplayMode(w, h, fps, id).also { it.sfIndex = sfIndex })
+                if (rec.fps in 30f..300f) {
+                    modes.add(DisplayMode(rec.width, rec.height, rec.fps, rec.id).also { it.sfIndex = sfIndex })
                 }
             }
         }
@@ -443,13 +437,8 @@ object RootUtils {
     private fun parseDisplayState(output: String): DisplayState {
         val activeModeId = Regex("""mActiveModeId=(\d+)""").find(output)?.groupValues?.get(1)?.toIntOrNull()
             ?: Regex("""activeModeId=(\d+)""").find(output)?.groupValues?.get(1)?.toIntOrNull()
-        val records = RECORD_PATTERN.findAll(output).associate { match ->
-            val id = match.groupValues[1].toInt()
-            id to ModeRecord(
-                match.groupValues[2].toInt(),
-                match.groupValues[3].toInt(),
-                match.groupValues[4].toFloat().roundToInt()
-            )
+        val records = DisplayRecordParser.parse(output).associate { rec ->
+            rec.id to ModeRecord(rec.width, rec.height, rec.fps.roundToInt())
         }
         val activeRecord = activeModeId?.let { records[it] }
         val activeHz = activeRecord?.hz
