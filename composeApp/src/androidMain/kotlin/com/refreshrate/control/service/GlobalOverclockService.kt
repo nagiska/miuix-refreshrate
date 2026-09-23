@@ -13,8 +13,10 @@ import android.os.IBinder
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import com.refreshrate.control.MainActivity
+import com.refreshrate.control.core.OwnershipState
 import com.refreshrate.control.model.DisplayMode
 import com.refreshrate.control.util.AutoOverclockManager
+import com.refreshrate.control.util.RefreshOwnership
 import com.refreshrate.control.util.RefreshSwitchCoordinator
 import com.refreshrate.control.util.RootUtils
 import com.refreshrate.control.util.RuntimeLog
@@ -86,6 +88,12 @@ class GlobalOverclockService : Service() {
             val prefs = getSharedPreferences("s", Context.MODE_PRIVATE)
             while (running) {
                 try {
+                    // per-app 配置生效中时让位,避免与分应用切换互抢
+                    RefreshOwnership.syncFromPrefs(this)
+                    if (RefreshOwnership.currentState().state == OwnershipState.AUTO_PROFILE_ENTERED) {
+                        Thread.sleep(POLL_MS)
+                        continue
+                    }
                     val res = prefs.getString("global_oc_res", "") ?: ""
                     val hz = prefs.getInt("global_oc_hz", 0)
                     val wh = if (res.isEmpty()) emptyList() else res.split("x")
@@ -110,7 +118,7 @@ class GlobalOverclockService : Service() {
                                 "ENFORCE current=${current?.rateInt ?: -1}Hz target=${target.rateInt}Hz sfIndex=${target.sfIndex}"
                             )
                             val latch = CountDownLatch(1)
-                            RefreshSwitchCoordinator.submit("global-oc") { _, _ ->
+                            RefreshSwitchCoordinator.submitWithoutBump("global-oc") { _, _ ->
                                 try {
                                     RootUtils.switchRefreshRate(target, allModes, currentHz, useSfFallback = true) { false }
                                 } finally {

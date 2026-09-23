@@ -193,10 +193,6 @@ class KeepAliveAccessibilityService : AccessibilityService() {
     private fun applyForPackage(basePkg: String) {
         if (basePkg.isEmpty()) return
         val prefs = getSharedPreferences("s", Context.MODE_PRIVATE) ?: return
-        if (GlobalOverclockService.isEnabled(this)) {
-            // 全局锁定开启,per-app 让位
-            return
-        }
         if (!prefs.getBoolean("custom_app_refresh", false)) {
             prefs.edit().remove(KEY_LAST_APPLIED_CONFIG).apply()
             lastAppliedConfig = ""

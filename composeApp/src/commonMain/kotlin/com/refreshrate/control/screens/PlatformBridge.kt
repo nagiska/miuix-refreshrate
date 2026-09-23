@@ -21,10 +21,6 @@ expect fun refreshDisplayData(refreshKey: Int = 0): DisplayData?
 
 expect fun applyDisplayMode(authMode: String, mode: DisplayMode, context: AppContext)
 
-expect fun setGlobalOverclock(context: AppContext, enabled: Boolean)
-
-expect fun isGlobalOverclockEnabled(context: AppContext): Boolean
-
 data class DisplayData(
     val currentMode: DisplayMode?,
     val authMode: String,
