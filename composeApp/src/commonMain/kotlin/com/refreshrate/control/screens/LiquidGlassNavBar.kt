@@ -121,14 +121,12 @@ fun LiquidGlassNavBar(
                             offsetY.snapTo(ty)
                         }
                     }
-                    // 松手:先取消拖动,再快速弹性归位 + 形变复原
+                    // 松手:先取消拖动,再让"回位"与"复原形状"并发同步(在回弹路上恢复原型)
                     dragHolder.job?.cancel()
                     dragHolder.job = null
-                    scope.launch {
-                        offsetX.animateTo(0f, springBack)
-                        offsetY.animateTo(0f, springBack)
-                        pressScale.animateTo(0f, tween(150))
-                    }
+                    scope.launch { offsetX.animateTo(0f, springBack) }
+                    scope.launch { offsetY.animateTo(0f, springBack) }
+                    scope.launch { pressScale.animateTo(0f, springBack) }
                 }
             }
     ) {
