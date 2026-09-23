@@ -21,13 +21,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import top.yukonga.miuix.kmp.basic.FloatingNavigationBar
-import top.yukonga.miuix.kmp.basic.FloatingNavigationBarItem
-import top.yukonga.miuix.kmp.basic.NavigationBarDefaults
 import top.yukonga.miuix.kmp.basic.NavigationItem
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.layerBackdrop as glassLayerBackdrop
+import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop as rememberGlassLayerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.icon.extended.Settings
@@ -62,6 +63,7 @@ fun App() {
         var currentTab by remember { mutableStateOf(0) }
         val navigationStack = remember { mutableStateListOf<SubScreen>() }
         val backdrop = rememberLayerBackdrop()
+        val bgBackdrop = rememberGlassLayerBackdrop()
 
         LifecycleResumeEffect(Unit) {
             backgroundPlaying = true
@@ -71,7 +73,7 @@ fun App() {
         Os3Background(
             playing = backgroundPlaying,
             modifier = Modifier.fillMaxSize(),
-            backgroundModifier = Modifier.layerBackdrop(backdrop),
+            backgroundModifier = Modifier.layerBackdrop(backdrop).glassLayerBackdrop(bgBackdrop),
         ) {
             CompositionLocalProvider(LocalAppContext provides appContext) {
                 val currentSubScreen = navigationStack.lastOrNull()
@@ -109,6 +111,7 @@ fun App() {
                 ) { subScreen ->
                     when (subScreen) {
                         null -> MainScaffold(
+                            backdrop = bgBackdrop,
                             currentTab = currentTab,
                             onTabChange = { currentTab = it },
                             onNavigateToAppList = { navigationStack.add(SubScreen.AppList) },
@@ -147,6 +150,7 @@ fun App() {
 
 @Composable
 private fun MainScaffold(
+    backdrop: Backdrop,
     currentTab: Int,
     onTabChange: (Int) -> Unit,
     onNavigateToAppList: () -> Unit,
@@ -160,48 +164,45 @@ private fun MainScaffold(
         NavigationItem("应用", MiuixIcons.VerticalSplit),
         NavigationItem("设置", MiuixIcons.Settings)
     )
-    val itemColors = NavigationBarDefaults.navigationBarItemColors(
-        unselectedContentColor = MiuixTheme.colorScheme.onSurfaceContainer,
-        selectedContentColor = MiuixTheme.colorScheme.primary,
-    )
+    val contentBackdrop = rememberGlassLayerBackdrop()
+    val navBackdrop = rememberCombinedBackdrop(backdrop, contentBackdrop)
+    val glassItems = remember(items) { items.map { GlassNavItem(it.label, it.icon) } }
+
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
-        when (currentTab) {
-            0 -> HomeScreen(
-                modifier = Modifier.fillMaxSize(),
-                onNavigateToTab = { onTabChange(1) }
-            )
-            1 -> CustomAppScreen(
-                modifier = Modifier.fillMaxSize(),
-                onNavigateToAppList = onNavigateToAppList,
-                onNavigateToAppConfig = onNavigateToAppConfig
-            )
-            2 -> SettingsScreen(
-                modifier = Modifier.fillMaxSize(),
-                onNavigateToLogs = onNavigateToLogs,
-                onNavigateToRefreshTest = onNavigateToRefreshTest,
-                onNavigateToAbout = onNavigateToAbout,
-            )
-            }
-
         Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .glassLayerBackdrop(contentBackdrop)
+        ) {
+            when (currentTab) {
+                0 -> HomeScreen(
+                    modifier = Modifier.fillMaxSize(),
+                    onNavigateToTab = { onTabChange(1) }
+                )
+                1 -> CustomAppScreen(
+                    modifier = Modifier.fillMaxSize(),
+                    onNavigateToAppList = onNavigateToAppList,
+                    onNavigateToAppConfig = onNavigateToAppConfig
+                )
+                2 -> SettingsScreen(
+                    modifier = Modifier.fillMaxSize(),
+                    onNavigateToLogs = onNavigateToLogs,
+                    onNavigateToRefreshTest = onNavigateToRefreshTest,
+                    onNavigateToAbout = onNavigateToAbout,
+                )
+            }
+        }
+
+        LiquidGlassNavBar(
+            backdrop = navBackdrop,
+            items = glassItems,
+            selectedIndex = currentTab,
+            onSelect = onTabChange,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth(),
-            contentAlignment = Alignment.BottomCenter,
-        ) {
-            FloatingNavigationBar {
-                items.forEachIndexed { index, item ->
-                    FloatingNavigationBarItem(
-                        selected = currentTab == index,
-                        onClick = { onTabChange(index) },
-                        icon = item.icon,
-                        label = item.label,
-                        colors = itemColors,
-                    )
-                }
-            }
-        }
+        )
     }
 }

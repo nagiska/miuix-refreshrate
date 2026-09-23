@@ -37,6 +37,9 @@ kotlin {
             implementation(libs.miuix.blur)
             implementation(libs.miuix.squircle)
             implementation(libs.androidx.lifecycle.runtime)
+            // 液态玻璃效果(Kyant0 Backdrop)
+            implementation("io.github.kyant0:backdrop:2.0.1")
+            implementation("io.github.kyant0:shapes:1.2.1")
         }
 
         androidMain.dependencies {
