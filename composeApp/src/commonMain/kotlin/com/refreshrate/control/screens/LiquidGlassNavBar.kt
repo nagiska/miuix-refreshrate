@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -28,9 +29,10 @@ import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
-import kotlin.math.abs
+import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.FloatingNavigationBar
 import top.yukonga.miuix.kmp.basic.FloatingNavigationBarItem
+import kotlin.math.abs
 
 data class GlassNavItem(val label: String, val icon: ImageVector)
 
@@ -45,7 +47,7 @@ private fun rubberBand(raw: Float, limit: Float, dim: Float): Float {
 /**
  * 底部导航 = MIUIX FloatingNavigationBar(选中/高亮全 MIUIX)+ Kyant0 液态玻璃。
  * 交互(模仿参照视频):
- *  - 按下即在按压点产生局部"凹陷"形变(形变枢轴 transformOrigin 跟随按压点,抓哪儿瘪哪儿),
+ *  - 按下即在按压点产生局部"凹陷"形变(枢轴 transformOrigin 跟随按压点,抓哪儿瘪哪儿),
  *    垂直压扁 + 水平微张,抓偏中心带一点倾斜;
  *  - 拖动跟手,带限位橡皮筋阻尼;
  *  - 松手弹性回弹到原位,形变同步复原。
@@ -58,6 +60,7 @@ fun LiquidGlassNavBar(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val scope = rememberCoroutineScope()
     val offsetX = remember { Animatable(0f) }
     val offsetY = remember { Animatable(0f) }
     val pressScale = remember { Animatable(0f) }
@@ -101,20 +104,26 @@ fun LiquidGlassNavBar(
                         (down.position.x / w).coerceIn(0f, 1f),
                         (down.position.y / h).coerceIn(0f, 1f),
                     )
-                    pressScale.animateTo(1f, tween(120))
+                    scope.launch { pressScale.animateTo(1f, tween(120)) }
                     var total = Offset.Zero
                     while (true) {
                         val event = awaitPointerEvent()
                         val change = event.changes.firstOrNull { it.id == down.id } ?: break
                         if (!change.pressed) break
-                        total += change.positionChange()
-                        offsetX.snapTo(rubberBand(total.x, limit, dim))
-                        offsetY.snapTo(rubberBand(total.y, limit, dim))
+                        total += change.position - change.previousPosition
+                        val tx = rubberBand(total.x, limit, dim)
+                        val ty = rubberBand(total.y, limit, dim)
+                        scope.launch {
+                            offsetX.snapTo(tx)
+                            offsetY.snapTo(ty)
+                        }
                     }
                     // 松手:弹性回弹到原位 + 形变复原
-                    offsetX.animateTo(0f, springBack)
-                    offsetY.animateTo(0f, springBack)
-                    pressScale.animateTo(0f, tween(150))
+                    scope.launch {
+                        offsetX.animateTo(0f, springBack)
+                        offsetY.animateTo(0f, springBack)
+                        pressScale.animateTo(0f, tween(150))
+                    }
                 }
             }
     ) {
