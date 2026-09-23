@@ -112,20 +112,32 @@ class GlobalOverclockService : Service() {
                             .minByOrNull { kotlin.math.abs(it.rateInt - hz) }
                             ?: allModes.minByOrNull { kotlin.math.abs(it.rateInt - hz) }
                         if (target != null) {
-                            val currentHz = AutoOverclockManager.getCurrentRefreshRate(this)
-                            RuntimeLog.appendGlobal(
-                                "GlobalOC",
-                                "ENFORCE current=${current?.rateInt ?: -1}Hz target=${target.rateInt}Hz sfIndex=${target.sfIndex}"
-                            )
-                            val latch = CountDownLatch(1)
-                            RefreshSwitchCoordinator.submitWithoutBump("global-oc") { _, _ ->
-                                try {
-                                    RootUtils.switchRefreshRate(target, allModes, currentHz, useSfFallback = true) { false }
-                                } finally {
-                                    latch.countDown()
+                            // 提交前再确认:root 读取期间可能已进入分应用会话
+                            if (RefreshOwnership.currentState().state != OwnershipState.AUTO_PROFILE_ENTERED) {
+                                val currentHz = AutoOverclockManager.getCurrentRefreshRate(this)
+                                RuntimeLog.appendGlobal(
+                                    "GlobalOC",
+                                    "ENFORCE current=${current?.rateInt ?: -1}Hz target=${target.rateInt}Hz sfIndex=${target.sfIndex}"
+                                )
+                                val latch = CountDownLatch(1)
+                                RefreshSwitchCoordinator.submitWithoutBump("global-oc") { _, _ ->
+                                    // 串行执行内的最终守卫:分应用已接管则放弃本次强制,切换中途接管则中止
+                                    val perAppActive = {
+                                        RefreshOwnership.currentState().state == OwnershipState.AUTO_PROFILE_ENTERED
+                                    }
+                                    if (perAppActive()) {
+                                        RuntimeLog.appendGlobal("GlobalOC", "ENFORCE skip perAppActive")
+                                        latch.countDown()
+                                        return@submitWithoutBump
+                                    }
+                                    try {
+                                        RootUtils.switchRefreshRate(target, allModes, currentHz, useSfFallback = true) { perAppActive() }
+                                    } finally {
+                                        latch.countDown()
+                                    }
                                 }
+                                latch.await(4000, TimeUnit.MILLISECONDS)
                             }
-                            latch.await(4000, TimeUnit.MILLISECONDS)
                         }
                     }
                     updateNotification()
