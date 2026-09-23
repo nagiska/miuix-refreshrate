@@ -29,12 +29,15 @@ import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.FloatingNavigationBar
 import top.yukonga.miuix.kmp.basic.FloatingNavigationBarItem
 import kotlin.math.abs
 
 data class GlassNavItem(val label: String, val icon: ImageVector)
+
+private class DragJobHolder { var job: Job? = null }
 
 /** 橡皮筋映射:限位内线性,超过限位后按 dim 渐近阻尼(越拉越涩)。 */
 private fun rubberBand(raw: Float, limit: Float, dim: Float): Float {
@@ -46,11 +49,10 @@ private fun rubberBand(raw: Float, limit: Float, dim: Float): Float {
 
 /**
  * 底部导航 = MIUIX FloatingNavigationBar(选中/高亮全 MIUIX)+ Kyant0 液态玻璃。
- * 交互(模仿参照视频):
- *  - 按下即在按压点产生局部"凹陷"形变(枢轴 transformOrigin 跟随按压点,抓哪儿瘪哪儿),
- *    垂直压扁 + 水平微张,抓偏中心带一点倾斜;
+ * 交互:
+ *  - 按下即在按压点产生局部"凹陷"形变(枢轴 transformOrigin 跟随按压点),垂直压扁+水平微张;
  *  - 拖动跟手,带限位橡皮筋阻尼;
- *  - 松手弹性回弹到原位,形变同步复原。
+ *  - 松手立即取消拖动、用弹性动画快速回到原位,形变同步复原。
  */
 @Composable
 fun LiquidGlassNavBar(
@@ -61,6 +63,7 @@ fun LiquidGlassNavBar(
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
+    val dragHolder = remember { DragJobHolder() }
     val offsetX = remember { Animatable(0f) }
     val offsetY = remember { Animatable(0f) }
     val pressScale = remember { Animatable(0f) }
@@ -76,7 +79,8 @@ fun LiquidGlassNavBar(
     val containerColor =
         if (isLight) Color(0xFFFAFAFA).copy(alpha = 0.28f)
         else Color(0xFF101010).copy(alpha = 0.28f)
-    val springBack = spring<Float>(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)
+    // 更快的回弹:松手迅速归位,仅保留一点点过冲
+    val springBack = spring<Float>(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessMedium)
 
     Box(
         modifier = modifier
@@ -89,10 +93,8 @@ fun LiquidGlassNavBar(
                 val ps = pressScale.value
                 val sxDrag = abs(dx) / limit
                 val syDrag = abs(dy) / limit
-                // 按压处局部形变:以按压点为枢轴,垂直压扁、水平微张;拖动时沿方向再拉伸
                 scaleX = 1f + ps * 0.06f + sxDrag * 0.05f
                 scaleY = 1f - ps * 0.12f + syDrag * 0.05f
-                // 抓取点偏离中心时轻微倾斜,强化"相对位置变化"
                 rotationZ = (origin.pivotFractionX - 0.5f) * ps * 5f
             }
             .pointerInput(Unit) {
@@ -113,12 +115,15 @@ fun LiquidGlassNavBar(
                         total += change.position - change.previousPosition
                         val tx = rubberBand(total.x, limit, dim)
                         val ty = rubberBand(total.y, limit, dim)
-                        scope.launch {
+                        dragHolder.job?.cancel()
+                        dragHolder.job = scope.launch {
                             offsetX.snapTo(tx)
                             offsetY.snapTo(ty)
                         }
                     }
-                    // 松手:弹性回弹到原位 + 形变复原
+                    // 松手:先取消拖动,再快速弹性归位 + 形变复原
+                    dragHolder.job?.cancel()
+                    dragHolder.job = null
                     scope.launch {
                         offsetX.animateTo(0f, springBack)
                         offsetY.animateTo(0f, springBack)
@@ -139,6 +144,7 @@ fun LiquidGlassNavBar(
                 onDrawSurface = { drawRect(containerColor) },
             ),
             color = Color.Transparent,
+            shadowElevation = 0.dp,
         ) {
             items.forEachIndexed { index, item ->
                 FloatingNavigationBarItem(
