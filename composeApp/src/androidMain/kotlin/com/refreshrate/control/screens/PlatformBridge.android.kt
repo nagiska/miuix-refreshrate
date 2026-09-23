@@ -158,12 +158,49 @@ actual fun applyDisplayMode(authMode: String, mode: DisplayMode, context: AppCon
                 "ManualSwitch",
                 "${if (matched) "SUCCESS" else "PENDING"} manual $lastSummary snapshot=${com.refreshrate.control.util.RootUtils.readDisplaySnapshot()}"
             )
+            // 手动切换成功后,有界保持,抵御切桌面等场景的系统瞬态提频(全局锁开启时由其负责)
+            if (matched && !com.refreshrate.control.service.GlobalOverclockService.isEnabled(ctx)) {
+                com.refreshrate.control.util.RefreshHoldManager.start(ctx, mode)
+            }
         } catch (e: Exception) {
             android.util.Log.e("PlatformBridge", "applyDisplayMode failed: ${e.message}")
             com.refreshrate.control.util.RuntimeLog.append(context.context, "ManualSwitch", "failed=${e.message}")
         }
     }
 }
+
+actual fun setGlobalOverclock(context: AppContext, enabled: Boolean) {
+    val ctx = context.context
+    if (enabled) {
+        RefreshOwnership.syncFromPrefs(ctx)
+        val baseline = RefreshOwnership.currentState().manualBaseline
+        val current = try {
+            AutoOverclockManager.getCurrentMode(ctx)
+        } catch (_: Exception) {
+            null
+        }
+        val res: String
+        val hz: Int
+        if (baseline != null) {
+            res = baseline.resolutionLabel
+            hz = baseline.rateInt
+        } else if (current != null) {
+            res = current.resolutionLabel
+            hz = current.rateInt
+        } else {
+            RuntimeLog.appendGlobal("GlobalOC", "enable failed noTarget")
+            return
+        }
+        com.refreshrate.control.service.GlobalOverclockService.start(ctx, res, hz)
+        RuntimeLog.appendGlobal("GlobalOC", "enable res=$res hz=$hz")
+    } else {
+        com.refreshrate.control.service.GlobalOverclockService.stop(ctx)
+        RuntimeLog.appendGlobal("GlobalOC", "disable")
+    }
+}
+
+actual fun isGlobalOverclockEnabled(context: AppContext): Boolean =
+    com.refreshrate.control.service.GlobalOverclockService.isEnabled(context.context)
 
 actual fun logRefreshRateTest(context: AppContext, event: String, metrics: String) {
     refreshTestLogExecutor.execute {

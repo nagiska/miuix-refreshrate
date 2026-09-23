@@ -100,6 +100,25 @@ fun SettingsScreen(
             )
         }
 
+        SmallTitle("全局锁定")
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp)
+                .padding(bottom = 12.dp)
+        ) {
+            var globalLock by remember { mutableStateOf(isGlobalOverclockEnabled(appContext)) }
+            ArrowPreference(
+                title = "全局锁定刷新率",
+                summary = if (globalLock) "已锁定并全局保持（含桌面），点击解除" else "把当前刷新率全局锁定并保持（含桌面），点击开启",
+                onClick = {
+                    globalLock = !globalLock
+                    setGlobalOverclock(appContext, globalLock)
+                }
+            )
+        }
+
         SmallTitle("调试")
 
         Card(
