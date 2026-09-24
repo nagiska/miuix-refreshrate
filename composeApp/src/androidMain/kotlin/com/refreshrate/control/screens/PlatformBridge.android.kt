@@ -117,7 +117,8 @@ actual fun applyDisplayMode(authMode: String, mode: DisplayMode, context: AppCon
                 val reapplyOk = if (attempt == 1) {
                     steppedOk
                 } else {
-                    com.refreshrate.control.util.RootUtils.switchRefreshRate(mode, allModes, currentHz) {
+                    val freshHz = com.refreshrate.control.util.AutoOverclockManager.getCurrentRefreshRate(ctx)
+                    com.refreshrate.control.util.RootUtils.switchRefreshRate(mode, allModes, freshHz, useSfFallback = true) {
                         isCancelled(gen)
                     }
                 }
@@ -157,6 +158,10 @@ actual fun applyDisplayMode(authMode: String, mode: DisplayMode, context: AppCon
                 "ManualSwitch",
                 "${if (matched) "SUCCESS" else "PENDING"} manual $lastSummary snapshot=${com.refreshrate.control.util.RootUtils.readDisplaySnapshot()}"
             )
+            // 手动切换成功后,当前档位即全局刷新率,由常驻服务保持(无需开关)
+            if (matched) {
+                com.refreshrate.control.service.GlobalOverclockService.start(ctx, mode.resolutionLabel, mode.rateInt)
+            }
         } catch (e: Exception) {
             android.util.Log.e("PlatformBridge", "applyDisplayMode failed: ${e.message}")
             com.refreshrate.control.util.RuntimeLog.append(context.context, "ManualSwitch", "failed=${e.message}")

@@ -1,6 +1,7 @@
 package com.refreshrate.control.util
 
 import android.util.Log
+import com.refreshrate.control.core.DisplayRecordParser
 import com.refreshrate.control.core.ModeSpec
 import com.refreshrate.control.core.RefreshEvidence
 import com.refreshrate.control.core.RefreshPlan
@@ -14,7 +15,6 @@ import kotlin.math.roundToInt
 
 object RootUtils {
     private const val TAG = "RootUtils"
-    private val RECORD_PATTERN = Regex("""id=(\d+),\s*width=(\d+),\s*height=(\d+),\s*fps=([\d.]+)""")
     private val NUMBER_PATTERN = Regex("""-?\d+(?:\.\d+)?""")
 
     data class RootCommandResult(
@@ -110,15 +110,51 @@ object RootUtils {
         return execRootDetailed(script).ok
     }
 
+    private data class RootOutput(val exitCode: Int, val stdout: String, val stderr: String)
+
+    /**
+     * 执行 su 脚本并并发抽干 stdout/stderr,避免输出超过管道缓冲时
+     * 子进程写阻塞与父进程 waitFor 互等造成死锁。
+     */
+    private fun runRootCapture(script: String): RootOutput {
+        val process = Runtime.getRuntime().exec("su")
+        val outBuf = StringBuilder()
+        val errBuf = StringBuilder()
+        val outThread = Thread {
+            try {
+                BufferedReader(InputStreamReader(process.inputStream)).use { reader ->
+                    reader.forEachLine { outBuf.append(it).append('\n') }
+                }
+            } catch (_: Exception) { }
+        }.apply { isDaemon = true }
+        val errThread = Thread {
+            try {
+                BufferedReader(InputStreamReader(process.errorStream)).use { reader ->
+                    reader.forEachLine { errBuf.append(it).append('\n') }
+                }
+            } catch (_: Exception) { }
+        }.apply { isDaemon = true }
+        outThread.start()
+        errThread.start()
+        try {
+            DataOutputStream(process.outputStream).use { stdin ->
+                stdin.writeBytes("$script\nexit\n")
+                stdin.flush()
+            }
+        } catch (_: Exception) { }
+        val exitCode = try {
+            process.waitFor()
+        } catch (e: InterruptedException) {
+            -1
+        }
+        try { outThread.join(3000) } catch (_: InterruptedException) { }
+        try { errThread.join(3000) } catch (_: InterruptedException) { }
+        return RootOutput(exitCode, outBuf.toString().trim(), errBuf.toString().trim())
+    }
+
     fun execRootDetailed(script: String, label: String = firstCommand(script)): RootCommandResult {
         return try {
-            val process = Runtime.getRuntime().exec("su")
-            val stdin = DataOutputStream(process.outputStream)
-            stdin.writeBytes("$script\nexit\n")
-            stdin.flush()
-            val exitCode = process.waitFor()
-            val out = BufferedReader(InputStreamReader(process.inputStream)).readText().trim()
-            val err = BufferedReader(InputStreamReader(process.errorStream)).readText().trim()
+            val (exitCode, out, err) = runRootCapture(script)
             val result = RootCommandResult(exitCode == 0, exitCode, out, err, label)
             logRootResult(result)
             result
@@ -131,13 +167,7 @@ object RootUtils {
 
     fun execRootForOutput(script: String, log: Boolean = false, label: String = firstCommand(script)): String {
         return try {
-            val process = Runtime.getRuntime().exec("su")
-            val stdin = DataOutputStream(process.outputStream)
-            stdin.writeBytes("$script\nexit\n")
-            stdin.flush()
-            val exitCode = process.waitFor()
-            val out = BufferedReader(InputStreamReader(process.inputStream)).readText().trim()
-            val err = BufferedReader(InputStreamReader(process.errorStream)).readText().trim()
+            val (exitCode, out, err) = runRootCapture(script)
             if (log || exitCode != 0 || err.isNotBlank()) {
                 logRootResult(RootCommandResult(exitCode == 0, exitCode, out, err, label))
             }
@@ -154,22 +184,25 @@ object RootUtils {
         if (output.isBlank()) return emptyList()
 
         val modes = mutableListOf<DisplayMode>()
+        var ordinal = 0
         for (line in output.lines()) {
-            val match = RECORD_PATTERN.find(line) ?: continue
-            val id = match.groupValues[1].toIntOrNull() ?: continue
-            val w = match.groupValues[2].toIntOrNull() ?: continue
-            val h = match.groupValues[3].toIntOrNull() ?: continue
-            // 保留原始浮点速率(59.94/60.0 不得合并);sfIndex 不猜测,仅已验证设备显式设置
-            val fps = match.groupValues[4].toFloatOrNull() ?: continue
-            if (fps in 30f..300f) {
-                modes.add(DisplayMode(w, h, fps, id))
+            // 跳过 mActiveMode=/mDefaultMode= 等单模式引用行:它们不是 supported-modes 列表项。
+            if (line.contains("mActiveMode") || line.contains("mDefaultMode")) continue
+            for (rec in DisplayRecordParser.parseLine(line)) {
+                // 优先用记录自带的 sfModeId(SF 事务 1035 权威索引);缺失才退回路序序号。
+                val sfIndex = rec.sfModeId ?: ordinal
+                ordinal++
+                // 保留原始浮点速率(59.94/60.0 不得合并)
+                if (rec.fps in 30f..300f) {
+                    modes.add(DisplayMode(rec.width, rec.height, rec.fps, rec.id).also { it.sfIndex = sfIndex })
+                }
             }
         }
         return modes.sortedBy { it.rateInt }
     }
 
-    fun setRate(mode: DisplayMode?, targetHz: Int): Boolean {
-        val sfIndex = mode?.sfIndex?.takeIf { it >= 0 }
+    fun setRate(mode: DisplayMode?, targetHz: Int, useSfFallback: Boolean = false): Boolean {
+        val sfIndex = mode?.sfIndex?.takeIf { it >= 0 }?.takeIf { useSfFallback }
         Log.d(TAG, "setRate: modeId=${mode?.modeId}, hz=$targetHz, sfIndex=$sfIndex")
         val script = buildString {
             if (sfIndex != null) {
@@ -185,8 +218,8 @@ object RootUtils {
         return result.ok
     }
 
-    fun setRateDown(mode: DisplayMode?, targetHz: Int): Boolean {
-        val sfIndex = mode?.sfIndex?.takeIf { it >= 0 }
+    fun setRateDown(mode: DisplayMode?, targetHz: Int, useSfFallback: Boolean = false): Boolean {
+        val sfIndex = mode?.sfIndex?.takeIf { it >= 0 }?.takeIf { useSfFallback }
         Log.d(TAG, "setRateDown: modeId=${mode?.modeId}, hz=$targetHz, sfIndex=$sfIndex")
         val script = buildString {
             // Reverse the working upshift order so min never remains above peak.
@@ -267,7 +300,12 @@ object RootUtils {
         val script = buildString {
             appendLine("cmd display clear-user-preferred-display-mode")
             if (minHz > 0) appendLine("settings put system min_refresh_rate ${minHz}.0")
+            else appendLine("settings delete system min_refresh_rate")
             if (maxHz > 0) appendLine("settings put system peak_refresh_rate ${maxHz}.0")
+            else appendLine("settings delete system peak_refresh_rate")
+            // 释放 App 之前钉下的用户档与 MIUI 档,交还系统自适应(否则 min==peak 仍锁死)
+            appendLine("settings delete system user_refresh_rate")
+            appendLine("settings delete secure miui_refresh_rate")
         }
         return execRootDetailed(script.trimEnd(), "restoreAdaptive min=$minHz max=$maxHz").ok
     }
@@ -277,16 +315,32 @@ object RootUtils {
         return execRootDetailed("service call SurfaceFlinger 1034 i32 $valInt", "nativeRefreshOverlay=$on").ok
     }
 
-    fun steppedSwitch(targetMode: DisplayMode, allModes: List<DisplayMode>, currentHz: Int, isCancelled: () -> Boolean = { false }): Boolean {
-        return switchRefreshRate(targetMode, allModes, currentHz, isCancelled)
+    fun steppedSwitch(
+        targetMode: DisplayMode,
+        allModes: List<DisplayMode>,
+        currentHz: Int,
+        useSfFallback: Boolean = false,
+        isCancelled: () -> Boolean = { false }
+    ): Boolean {
+        return switchRefreshRate(targetMode, allModes, currentHz, useSfFallback, isCancelled)
     }
 
     /**
      * 统一切换流程:升档、降档、同档都按 RefreshPlan 生成步进,
      * 并在未取消时对目标 DisplayMode 做一次完整最终提交
-     * (preferred mode + 必要 settings + 受控 SF fallback),记录目标 modeId。
+     * (preferred mode + 必要 settings + 受控 SF fallback)。
+     *
+     * @param useSfFallback 为 true 时才在命令里追加 service call SurfaceFlinger 1035(需 sfIndex>=0)。
+     *   默认 false:正常首试只走 set-user-preferred + settings;仅当首试校验失败后的重试才置 true,
+     *   让"忽略 set-user-preferred-display-mode 的设备"多一条 SurfaceFlinger 杠杆,同时不干扰已正常工作的设备。
      */
-    fun switchRefreshRate(targetMode: DisplayMode, allModes: List<DisplayMode>, currentHz: Int, isCancelled: () -> Boolean = { false }): Boolean {
+    fun switchRefreshRate(
+        targetMode: DisplayMode,
+        allModes: List<DisplayMode>,
+        currentHz: Int,
+        useSfFallback: Boolean = false,
+        isCancelled: () -> Boolean = { false }
+    ): Boolean {
         val targetHz = targetMode.rateInt
         val plan = RefreshPlan.plan(
             target = targetMode.toModeSpec(),
@@ -301,7 +355,7 @@ object RootUtils {
         )
         RuntimeLog.appendGlobal(
             TAG,
-            "STEP ${plan.direction} current=${currentHz}Hz target=${targetHz}Hz steps=${plan.steps.map { it.rateInt }}"
+            "STEP ${plan.direction} current=${currentHz}Hz target=${targetHz}Hz steps=${plan.steps.map { it.rateInt }} sfFallback=$useSfFallback"
         )
         for (stepSpec in plan.steps) {
             if (isCancelled()) {
@@ -311,9 +365,9 @@ object RootUtils {
             }
             val stepMode = allModes.firstOrNull { it.modeId == stepSpec.modeId } ?: targetMode
             val stepOk = if (plan.direction == SwitchDirection.UP) {
-                setRate(stepMode, stepMode.rateInt)
+                setRate(stepMode, stepMode.rateInt, useSfFallback)
             } else {
-                setRateDown(stepMode, stepMode.rateInt)
+                setRateDown(stepMode, stepMode.rateInt, useSfFallback)
             }
             ok = stepOk && ok
             RuntimeLog.appendGlobal(TAG, "STEP ${plan.direction} set=${stepMode.rateInt}Hz modeId=${stepMode.modeId} ok=$stepOk")
@@ -324,7 +378,7 @@ object RootUtils {
         }
         // 最终提交:升档、降档、同档都在未取消时对目标做一次完整提交
         if (!isCancelled()) {
-            val finalOk = commitTargetMode(targetMode, targetHz)
+            val finalOk = commitTargetMode(targetMode, targetHz, useSfFallback)
             ok = finalOk && ok
             RuntimeLog.appendGlobal(
                 TAG,
@@ -337,10 +391,11 @@ object RootUtils {
 
     /**
      * 对目标 DisplayMode 做一次完整最终提交:
-     * preferred mode + 必要 settings + 受控的 SF fallback(仅已验证设备,sfIndex >= 0)。
+     * preferred mode + 必要 settings + 受控的 SF fallback。
+     * SF fallback(service call SurfaceFlinger 1035)仅在 useSfFallback=true 且 sfIndex>=0 时追加。
      */
-    private fun commitTargetMode(targetMode: DisplayMode, targetHz: Int): Boolean {
-        val sfIndex = targetMode.sfIndex.takeIf { it >= 0 }
+    private fun commitTargetMode(targetMode: DisplayMode, targetHz: Int, useSfFallback: Boolean = false): Boolean {
+        val sfIndex = targetMode.sfIndex.takeIf { it >= 0 }?.takeIf { useSfFallback }
         val script = buildString {
             appendLine("cmd display set-user-preferred-display-mode ${targetMode.width} ${targetMode.height} $targetHz")
             appendLine("settings put system peak_refresh_rate ${targetHz}.0")
@@ -382,13 +437,8 @@ object RootUtils {
     private fun parseDisplayState(output: String): DisplayState {
         val activeModeId = Regex("""mActiveModeId=(\d+)""").find(output)?.groupValues?.get(1)?.toIntOrNull()
             ?: Regex("""activeModeId=(\d+)""").find(output)?.groupValues?.get(1)?.toIntOrNull()
-        val records = RECORD_PATTERN.findAll(output).associate { match ->
-            val id = match.groupValues[1].toInt()
-            id to ModeRecord(
-                match.groupValues[2].toInt(),
-                match.groupValues[3].toInt(),
-                match.groupValues[4].toFloat().roundToInt()
-            )
+        val records = DisplayRecordParser.parse(output).associate { rec ->
+            rec.id to ModeRecord(rec.width, rec.height, rec.fps.roundToInt())
         }
         val activeRecord = activeModeId?.let { records[it] }
         val activeHz = activeRecord?.hz

@@ -50,17 +50,27 @@ object RefreshEvidence {
             s.activeHeight != null && s.activeHz != null
         if (activeResolvable) {
             val resMatch = s.activeWidth == width && s.activeHeight == height
-            val hzMatch = hzClose(s.activeHz!!, hz)
-            if (resMatch && hzMatch) return EvidenceResult.Match("activeMode")
             if (!resMatch) {
                 return EvidenceResult.Mismatch(
                     "activeMode:${s.activeWidth}x${s.activeHeight}@${s.activeHz}Hz != target:${width}x${height}@${hz}Hz"
                 )
             }
-            // 分辨率一致但 Hz 不一致:继续看次级证据(物理周期可能更接近真实)
+            if (hzClose(s.activeHz!!, hz)) return EvidenceResult.Match("activeMode")
+            // 分辨率一致但 active Hz 不符:继续看其它"真实面板证据",但不降级到 settings
         }
+        // 真实面板证据:physical / driver(以及可解析的 active Hz)。任一匹配即成功。
         if (s.physicalHz != null && hzClose(s.physicalHz, hz)) return EvidenceResult.Match("physical")
         if (s.driverHz != null && hzClose(s.driverHz, hz)) return EvidenceResult.Match("driver")
+        // 真实证据存在但均不符:权威判失败,不得被 App 自己写入的 preferred/settings 翻案成功
+        // (否则"面板没切但 settings 写对了"会被误判 Match,SF 回退与重试永不触发)。
+        val hasRealEvidence = activeResolvable || s.physicalHz != null || s.driverHz != null
+        if (hasRealEvidence) {
+            return EvidenceResult.Mismatch(
+                "realEvidence active=${s.activeHz} physical=${s.physicalHz} driver=${s.driverHz} " +
+                    "!= target:${width}x${height}@${hz}Hz"
+            )
+        }
+        // 无任何真实面板证据时,才回退到 preferred / settings。
         if (s.preferredHz != null && hzClose(s.preferredHz, hz)) return EvidenceResult.Match("preferred")
         val settings = listOfNotNull(s.userHz, s.peakHz, s.minHz, s.miuiHz)
         if (settings.isNotEmpty() && settings.all { hzClose(it, hz) }) return EvidenceResult.Match("settings")
@@ -70,11 +80,12 @@ object RefreshEvidence {
     /** 兼容旧式整数 Hz 验证(仅 androidFallback 使用)。 */
     fun matchesTarget(s: Snapshot, hz: Int): Boolean {
         val activeResolvable = s.activeModeId != null && s.activeHz != null
-        if (activeResolvable) {
-            if (hzClose(s.activeHz!!, hz)) return true
-        }
+        if (activeResolvable && hzClose(s.activeHz!!, hz)) return true
         if (s.physicalHz != null && hzClose(s.physicalHz, hz)) return true
         if (s.driverHz != null && hzClose(s.driverHz, hz)) return true
+        // 真实证据存在但均不符:权威判失败,不被 preferred/settings 翻案
+        val hasRealEvidence = activeResolvable || s.physicalHz != null || s.driverHz != null
+        if (hasRealEvidence) return false
         if (s.preferredHz != null && hzClose(s.preferredHz, hz)) return true
         val settings = listOfNotNull(s.userHz, s.peakHz, s.minHz, s.miuiHz)
         return settings.isNotEmpty() && settings.all { hzClose(it, hz) }
