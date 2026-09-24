@@ -60,8 +60,8 @@ android {
         applicationId = "com.refreshrate.control"
         minSdk = 33
         targetSdk = 37
-        versionCode = 3
-        versionName = "1.2.0"
+        versionCode = 4
+        versionName = "1.3.0"
         buildConfigField("String", "BUILD_REVISION", "\"$buildRevision\"")
     }
 
