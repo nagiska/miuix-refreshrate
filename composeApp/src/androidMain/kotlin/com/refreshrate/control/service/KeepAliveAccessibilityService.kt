@@ -62,6 +62,8 @@ class KeepAliveAccessibilityService : AccessibilityService() {
     private var lastPollHeartbeatAt: Long = 0L
     private var lastForegroundConflict: String = ""
     private var lastForegroundConflictAt: Long = 0L
+    private var lastSuppressLogPkg: String = ""
+    private var lastSuppressLogAt: Long = 0L
     private val switchStateLock = Any()
     @Volatile private var restoreInProgress: Boolean = false
     @Volatile private var restoreWatchdogActive: Boolean = false
@@ -229,10 +231,21 @@ class KeepAliveAccessibilityService : AccessibilityService() {
             RefreshOwnership.syncFromPrefs(this)
             val ownership = RefreshOwnership.currentState()
             if (ownership.shouldSuppressRestore() && lastAppliedConfig.isEmpty()) {
-                runtimeLog(
-                    "OWNERSHIP restoreSuppressed pkg=$basePkg manual=${ownership.manualBaseline?.resolutionLabel}@${ownership.manualBaseline?.refreshRate}Hz " +
-                        "gen=${RefreshSwitchCoordinator.currentGeneration()} oldRestore=${restoreMode?.resolutionLabel}@${restoreHz}Hz"
-                )
+                // 降噪:同一包名 10s 内只打一次;并附带该包是否配过(分辨/Hz),
+                // 便于区分"从没配过"vs"配了但没开/分辨率不匹配"
+                val now = System.currentTimeMillis()
+                if (effectivePkg != lastSuppressLogPkg || now - lastSuppressLogAt > 10_000L) {
+                    lastSuppressLogPkg = effectivePkg
+                    lastSuppressLogAt = now
+                    val cfgRes = prefs.getString("app_refresh_res_$effectivePkg", "") ?: ""
+                    val cfgHz = prefs.getInt("app_refresh_hz_$effectivePkg", -1)
+                    runtimeLog(
+                        "OWNERSHIP restoreSuppressed pkg=$effectivePkg " +
+                            "configured=${cfgRes.isNotEmpty() && cfgHz >= 0}(${cfgRes}@${cfgHz}Hz) " +
+                            "manual=${ownership.manualBaseline?.resolutionLabel}@${ownership.manualBaseline?.refreshRate}Hz " +
+                            "gen=${RefreshSwitchCoordinator.currentGeneration()} oldRestore=${restoreMode?.resolutionLabel}@${restoreHz}Hz"
+                    )
+                }
                 // 清除残留 restore 状态,防止后续前台事件再次恢复旧目标
                 clearRestoreState(prefs)
                 return
@@ -403,6 +416,7 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         val requestedHz = prefs.getInt("app_refresh_hz_$effectivePkg", -1)
         if (res.isEmpty() || requestedHz < 0) {
             Log.w(TAG, "应用 $effectivePkg 配置不完整: res=$res, hz=$requestedHz")
+            runtimeLog("APPLY skip incompleteConfig pkg=$effectivePkg res=$res hz=$requestedHz enabled=$enabled")
             return
         }
 
@@ -615,8 +629,12 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         val now = System.currentTimeMillis()
         if (now - lastPollHeartbeatAt < POLL_HEARTBEAT_MS) return
         lastPollHeartbeatAt = now
+        val enabledApps = com.refreshrate.control.util.PrefsHelper.getEnabledApps(this)
+        val enabledSummary = if (enabledApps.isEmpty()) "none"
+            else enabledApps.joinToString(", ") { "${it.first}(${it.third})" }
         runtimeLog(
             "POLL heartbeat top=$topPkg source=$source custom=${prefs.getBoolean("custom_app_refresh", false)} " +
+                "configuredApps=${enabledApps.size}[$enabledSummary] " +
                 "current=$currentFgPackage pending=$pendingFgPackage last=$lastAppliedConfig " +
                 "restore=${restoreMode?.resolutionLabel}@${restoreHz}Hz inProgress=$restoreInProgress gen=${RefreshSwitchCoordinator.currentGeneration()} " +
                 "root=${RootUtils.isRootAvailable()} display=${RootUtils.readDisplayState().summary()}"
