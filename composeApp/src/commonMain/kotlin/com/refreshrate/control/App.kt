@@ -6,6 +6,8 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -178,22 +180,35 @@ private fun MainScaffold(
                 .fillMaxSize()
                 .glassLayerBackdrop(contentBackdrop)
         ) {
-            when (currentTab) {
-                0 -> HomeScreen(
-                    modifier = Modifier.fillMaxSize(),
-                    onNavigateToTab = { onTabChange(1) }
-                )
-                1 -> CustomAppScreen(
-                    modifier = Modifier.fillMaxSize(),
-                    onNavigateToAppList = onNavigateToAppList,
-                    onNavigateToAppConfig = onNavigateToAppConfig
-                )
-                2 -> SettingsScreen(
-                    modifier = Modifier.fillMaxSize(),
-                    onNavigateToLogs = onNavigateToLogs,
-                    onNavigateToRefreshTest = onNavigateToRefreshTest,
-                    onNavigateToAbout = onNavigateToAbout,
-                )
+            // MIUIX 底栏切页:fade-through(淡入 + 轻微缩放),无横向位移
+            AnimatedContent(
+                modifier = Modifier.fillMaxSize(),
+                targetState = currentTab,
+                transitionSpec = {
+                    (fadeIn(animationSpec = tween(210, delayMillis = 60)) +
+                        scaleIn(initialScale = 0.93f, animationSpec = tween(260, delayMillis = 60))) togetherWith
+                        (fadeOut(animationSpec = tween(140)) +
+                            scaleOut(targetScale = 0.97f, animationSpec = tween(170)))
+                },
+                label = "tabSwitch"
+            ) { tab ->
+                when (tab) {
+                    0 -> HomeScreen(
+                        modifier = Modifier.fillMaxSize(),
+                        onNavigateToTab = { onTabChange(1) }
+                    )
+                    1 -> CustomAppScreen(
+                        modifier = Modifier.fillMaxSize(),
+                        onNavigateToAppList = onNavigateToAppList,
+                        onNavigateToAppConfig = onNavigateToAppConfig
+                    )
+                    2 -> SettingsScreen(
+                        modifier = Modifier.fillMaxSize(),
+                        onNavigateToLogs = onNavigateToLogs,
+                        onNavigateToRefreshTest = onNavigateToRefreshTest,
+                        onNavigateToAbout = onNavigateToAbout,
+                    )
+                }
             }
         }
 
